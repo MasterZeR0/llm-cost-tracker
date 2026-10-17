@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Cost Tracker</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>LLM Cost Tracker</h1>
+      <div class="controls">
+        <label for="period">Period:</label>
+        <select id="period" onchange="loadDashboard()">
+          <option value="today">Today</option>
+          <option value="week" selected>Last 7 Days</option>
+          <option value="month">Last 30 Days</option>
+          <option value="all">All Time</option>
+        </select>
+      </div>
+    </header>
+
+    <div class="cards-grid">
+      <div class="card">
+        <h3>Total Requests</h3>
+        <p id="total-requests" class="metric">-</p>
+      </div>
+      <div class="card">
+        <h3>Total Tokens</h3>
+        <p id="total-tokens" class="metric">-</p>
+      </div>
+      <div class="card">
+        <h3>Total Cost</h3>
+        <p id="total-cost" class="metric">-</p>
+      </div>
+      <div class="card">
+        <h3>Avg Latency</h3>
+        <p id="avg-latency" class="metric">-</p>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-box">
+        <h3>Cost Over Time</h3>
+        <canvas id="costTimeChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3>Cost by Model</h3>
+        <canvas id="costModelChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3>Tokens by Model</h3>
+        <canvas id="tokensModelChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3>Tool Distribution</h3>
+        <canvas id="toolUsageChart"></canvas>
+      </div>
+    </div>
+
+    <div class="table-box">
+      <h3>Recent Requests</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Tool</th>
+            <th>Model</th>
+            <th>Input Tok</th>
+            <th>Output Tok</th>
+            <th>Cost</th>
+            <th>Latency</th>
+          </tr>
+        </thead>
+        <tbody id="requests-table"></tbody>
+      </table>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
