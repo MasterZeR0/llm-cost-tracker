@@ -118,3 +118,83 @@ func TestStore_SyncState(t *testing.T) {
 
 func pointerFloat(v float64) *float64 { return &v }
 func pointerInt(v int64) *int64       { return &v }
+
+func TestStore_MigrationAndToolCalls(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_migration.db")
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer st.Close()
+
+	// Verify columns exist on requests table
+	var colCount int
+	err = st.DB().QueryRow(`SELECT count(*) FROM pragma_table_info('requests') WHERE name IN ('step_index', 'tool_call_count', 'tool_error_count', 'subagent_call_count')`).Scan(&colCount)
+	if err != nil {
+		t.Fatalf("failed to query pragma_table_info: %v", err)
+	}
+	if colCount != 4 {
+		t.Fatalf("expected 4 new columns on requests table, got %d", colCount)
+	}
+
+	// Verify tool_calls table exists
+	var tableExists int
+	err = st.DB().QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='tool_calls'`).Scan(&tableExists)
+	if err != nil {
+		t.Fatalf("failed to query sqlite_master: %v", err)
+	}
+	if tableExists != 1 {
+		t.Fatalf("expected tool_calls table to exist, got %d", tableExists)
+	}
+
+	// Insert a request with tool calls
+	reqID := "req-test-1"
+	req := store.Request{
+		ID:                reqID,
+		Tool:              "agy",
+		SessionID:         "sess-123",
+		Timestamp:         time.Now().UTC(),
+		Model:             "gemini-2-pro",
+		InputTokens:       1000,
+		OutputTokens:      200,
+		CacheReadTokens:   5000,
+		TotalTokens:       6200,
+		StepIndex:         1,
+		ToolCallCount:     2,
+		ToolErrorCount:    1,
+		SubagentCallCount: 0,
+		ToolCalls: []store.ToolCall{
+			{
+				ID:        "tc-1",
+				RequestID: reqID,
+				SessionID: "sess-123",
+				ToolName:  "run_command",
+				Status:    "error",
+				CreatedAt: time.Now().UTC(),
+			},
+			{
+				ID:        "tc-2",
+				RequestID: reqID,
+				SessionID: "sess-123",
+				ToolName:  "view_file",
+				Status:    "success",
+				CreatedAt: time.Now().UTC().Add(time.Second),
+			},
+		},
+	}
+
+	if err := st.InsertRequestsWithTools([]store.Request{req}); err != nil {
+		t.Fatalf("failed to insert request with tools: %v", err)
+	}
+
+	var savedToolCount int
+	err = st.DB().QueryRow(`SELECT count(*) FROM tool_calls WHERE request_id = ?`, reqID).Scan(&savedToolCount)
+	if err != nil {
+		t.Fatalf("failed to count tool calls: %v", err)
+	}
+	if savedToolCount != 2 {
+		t.Fatalf("expected 2 tool calls saved, got %d", savedToolCount)
+	}
+}
+
