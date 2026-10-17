@@ -53,7 +53,7 @@ func RenderSummary(w io.Writer, s *store.Store, period string) error {
 		fmt.Fprintln(w, "├─────────────────────────────────────────────┤")
 		fmt.Fprintln(w, "│  By Model:                                  │")
 		for _, mc := range modelCost {
-			fmt.Fprintf(w, "│    %-16s %3d reqs  $%-6.2f        │\n", mc.Model, mc.RequestCount, mc.Cost)
+			fmt.Fprintf(w, "│    %-16s %3d reqs  $%-6.2f       │\n", mc.Model, mc.RequestCount, mc.Cost)
 		}
 	}
 

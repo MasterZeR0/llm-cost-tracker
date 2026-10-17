@@ -141,4 +141,3 @@ func TestPricingEngine_CaseInsensitive(t *testing.T) {
 		t.Fatalf("expected cost ~0.75, got %f", *cost)
 	}
 }
-
