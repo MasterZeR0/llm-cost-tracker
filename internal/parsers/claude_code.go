@@ -49,9 +49,9 @@ type claudeAssistantEvent struct {
 	Message    struct {
 		Model string `json:"model"`
 		Usage struct {
-			InputTokens             int64 `json:"input_tokens"`
-			OutputTokens            int64 `json:"output_tokens"`
-			CacheReadInputTokens    int64 `json:"cache_read_input_tokens"`
+			InputTokens              int64 `json:"input_tokens"`
+			OutputTokens             int64 `json:"output_tokens"`
+			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
 	} `json:"message"`
@@ -90,7 +90,7 @@ func (p *ClaudeCodeParser) Parse(source DataSource, state store.SyncState) ([]st
 			currentOffset += int64(len(line))
 			var evt claudeAssistantEvent
 			if jsonErr := json.Unmarshal(line, &evt); jsonErr == nil && evt.Type == "assistant" {
-				ts := time.Now().UTC()
+				ts := time.Now().UTC().Add(time.Duration(len(requests)) * time.Second)
 				if evt.Timestamp != "" {
 					if parsedTs, err := time.Parse(time.RFC3339, evt.Timestamp); err == nil {
 						ts = parsedTs
