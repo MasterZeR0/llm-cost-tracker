@@ -1,0 +1,1 @@
+{"event":"message_send","properties":{"main_model":"anthropic/claude-3-5-sonnet-20241022","prompt_tokens":114112,"completion_tokens":94,"total_tokens":114206,"cost":0.3423},"time":1742560429}
