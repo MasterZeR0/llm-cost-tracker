@@ -9,8 +9,8 @@ import (
 func TestPricingEngine_StandardModels(t *testing.T) {
 	e := pricing.NewEngine(nil)
 
-	// Claude Opus: Input $15/m, Output $75/m
-	cost, ok := e.CalculateCost("claude-opus-5", 1_000_000, 100_000, 0, 0)
+	// Claude Opus base: Input $15/m, Output $75/m
+	cost, ok := e.CalculateCost("claude-opus-4-20250514", 1_000_000, 100_000, 0, 0)
 	if !ok {
 		t.Fatal("expected model to match")
 	}
@@ -18,6 +18,36 @@ func TestPricingEngine_StandardModels(t *testing.T) {
 	expected := 22.50
 	if cost == nil || *cost < expected-0.01 || *cost > expected+0.01 {
 		t.Fatalf("expected cost ~22.50, got %v", cost)
+	}
+
+	// Claude Opus 5: Input $4/m, Output $20/m
+	costOpus5, ok := e.CalculateCost("claude-opus-5", 1_000_000, 100_000, 0, 0)
+	if !ok {
+		t.Fatal("expected claude-opus-5 to match")
+	}
+	// 4 + (0.1 * 20) = 4 + 2 = 6.00
+	if costOpus5 == nil || *costOpus5 < 5.99 || *costOpus5 > 6.01 {
+		t.Fatalf("expected cost ~6.00 for claude-opus-5, got %v", costOpus5)
+	}
+
+	// OpenAI o1: Input $15/m, Output $60/m
+	costO1, ok := e.CalculateCost("o1", 1_000_000, 100_000, 0, 0)
+	if !ok {
+		t.Fatal("expected o1 to match")
+	}
+	// 15 + (0.1 * 60) = 21.00
+	if costO1 == nil || *costO1 < 20.99 || *costO1 > 21.01 {
+		t.Fatalf("expected cost ~21.00 for o1, got %v", costO1)
+	}
+
+	// OpenAI o3-mini: Input $1.10/m, Output $4.40/m
+	costO3Mini, ok := e.CalculateCost("o3-mini", 1_000_000, 100_000, 0, 0)
+	if !ok {
+		t.Fatal("expected o3-mini to match")
+	}
+	// 1.10 + 0.44 = 1.54
+	if costO3Mini == nil || *costO3Mini < 1.53 || *costO3Mini > 1.55 {
+		t.Fatalf("expected cost ~1.54 for o3-mini, got %v", costO3Mini)
 	}
 
 	// Unknown model
