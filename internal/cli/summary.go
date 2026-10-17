@@ -39,7 +39,7 @@ func RenderSummary(w io.Writer, s *store.Store, period string) error {
 	fmt.Fprintf(w, "│  Total Tokens:   %-26d │\n", stats.TotalTokens)
 	fmt.Fprintf(w, "│  Total Cost:     $%-25.2f │\n", stats.TotalCost)
 	latStr := fmt.Sprintf("%.2fs", stats.AvgLatencyMS/1000.0)
-	fmt.Fprintf(w, "│  Avg Latency:    %-25s │\n", latStr)
+	fmt.Fprintf(w, "│  Avg Latency:    %-26s │\n", latStr)
 
 	if len(toolUsage) > 0 {
 		fmt.Fprintln(w, "├─────────────────────────────────────────────┤")
