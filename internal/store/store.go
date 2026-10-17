@@ -67,7 +67,7 @@ func (s *Store) InsertRequests(reqs []Request) (int, error) {
 	var inserted int
 	for _, r := range reqs {
 		res, err := stmt.Exec(
-			r.ID, r.Tool, r.SessionID, r.Timestamp.Format(time.RFC3339), r.Model,
+			r.ID, r.Tool, r.SessionID, r.Timestamp.Format(time.RFC3339Nano), r.Model,
 			r.InputTokens, r.OutputTokens, r.CacheReadTokens, r.CacheWriteTokens, r.TotalTokens,
 			r.CostUSD, r.LatencyMS, r.Status, r.PromptText, r.ResponseText,
 			r.SourceFile, r.RawData,

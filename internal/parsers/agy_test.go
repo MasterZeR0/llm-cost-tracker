@@ -201,3 +201,52 @@ func TestAGYParser_NonExistentFile(t *testing.T) {
 		t.Fatal("expected error for non-existent file, got nil")
 	}
 }
+
+func TestAGYParser_SameSecondDeduplication(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "transcript.jsonl")
+
+	// Two PLANNER_RESPONSE events at the exact same second
+	content := `{"type":"PLANNER_RESPONSE","created_at":"2026-10-17T11:51:18Z","input_tokens":100,"output_tokens":50}` + "\n" +
+		`{"type":"PLANNER_RESPONSE","created_at":"2026-10-17T11:51:18Z","input_tokens":200,"output_tokens":80}` + "\n"
+
+	if err := os.WriteFile(logFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	parser := &parsers.AGYParser{}
+	state := store.SyncState{SourcePath: logFile, Tool: "agy"}
+
+	reqs, _, err := parser.Parse(parsers.DataSource{Path: logFile, Type: "jsonl"}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 requests parsed, got %d", len(reqs))
+	}
+
+	// Insert into real SQLite store to test UNIQUE constraint
+	dbPath := filepath.Join(tmpDir, "tracker.db")
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	inserted, err := st.InsertRequests(reqs)
+	if err != nil {
+		t.Fatalf("unexpected error inserting requests: %v", err)
+	}
+	if inserted != 2 {
+		t.Fatalf("expected 2 records inserted (neither dropped by same-second collision), got %d", inserted)
+	}
+
+	// Re-inserting the same requests should insert 0 (proper deduplication)
+	insertedReplay, err := st.InsertRequests(reqs)
+	if err != nil {
+		t.Fatalf("unexpected error on replay insert: %v", err)
+	}
+	if insertedReplay != 0 {
+		t.Fatalf("expected 0 new records on duplicate replay, got %d", insertedReplay)
+	}
+}

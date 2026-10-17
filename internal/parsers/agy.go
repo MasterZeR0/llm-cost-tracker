@@ -42,6 +42,7 @@ func (p *AGYParser) Discover(cfg config.ToolConfig) ([]DataSource, error) {
 }
 
 type agyTranscriptEvent struct {
+	StepIndex       *int64 `json:"step_index,omitempty"`
 	Source          string `json:"source"`
 	Type            string `json:"type"`
 	Status          string `json:"status"`
@@ -73,6 +74,8 @@ func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Req
 	reader := bufio.NewReader(file)
 	var requests []store.Request
 	currentOffset := state.LastOffset
+	var prevTs time.Time
+	sameTsCount := int64(0)
 
 	// Extract conversation id from path: .../brain/<id>/.system_generated/logs/transcript.jsonl
 	parts := strings.Split(source.Path, string(filepath.Separator))
@@ -96,12 +99,23 @@ func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Req
 			if jsonErr := json.Unmarshal(line, &evt); jsonErr == nil && evt.Type == "PLANNER_RESPONSE" {
 				ts := time.Now().UTC()
 				if evt.CreatedAt != "" {
-					if parsed, tErr := time.Parse(time.RFC3339, evt.CreatedAt); tErr == nil {
+					if parsed, tErr := time.Parse(time.RFC3339Nano, evt.CreatedAt); tErr == nil {
 						ts = parsed
-					} else if parsed, tErr := time.Parse(time.RFC3339Nano, evt.CreatedAt); tErr == nil {
+					} else if parsed, tErr := time.Parse(time.RFC3339, evt.CreatedAt); tErr == nil {
 						ts = parsed
 					}
 				}
+				// Use step_index if provided, or add offset on same-timestamp collision
+				if evt.StepIndex != nil {
+					ts = ts.Add(time.Duration(*evt.StepIndex) * time.Millisecond)
+				} else if ts.Equal(prevTs) {
+					sameTsCount++
+					ts = ts.Add(time.Duration(sameTsCount) * time.Millisecond)
+				} else {
+					prevTs = ts
+					sameTsCount = 0
+				}
+
 				model := "gemini-2-pro"
 				if evt.Model != "" {
 					model = evt.Model

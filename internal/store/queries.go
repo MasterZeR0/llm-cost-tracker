@@ -168,16 +168,25 @@ func (s *Store) GetToolUsage(period string) ([]ToolUsagePoint, error) {
 	return points, nil
 }
 
-func (s *Store) GetRecentRequests(limit int) ([]Request, error) {
+func (s *Store) GetRecentRequests(limit int, periodOpt ...string) ([]Request, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.Query(`
+	period := ""
+	if len(periodOpt) > 0 {
+		period = periodOpt[0]
+	}
+	clause := periodClause(period)
+
+	query := fmt.Sprintf(`
 		SELECT id, tool, coalesce(session_id, ''), timestamp, coalesce(model, 'unknown'), input_tokens, output_tokens, total_tokens, cost_usd, latency_ms, coalesce(status, 'success')
 		FROM requests
+		%s
 		ORDER BY timestamp DESC
 		LIMIT ?
-	`, limit)
+	`, clause)
+
+	rows, err := s.db.Query(query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +200,11 @@ func (s *Store) GetRecentRequests(limit int) ([]Request, error) {
 		var latency sql.NullInt64
 
 		if err := rows.Scan(&r.ID, &r.Tool, &r.SessionID, &tsStr, &r.Model, &r.InputTokens, &r.OutputTokens, &r.TotalTokens, &cost, &latency, &r.Status); err == nil {
-			r.Timestamp, _ = time.Parse(time.RFC3339, tsStr)
+			if t, err := time.Parse(time.RFC3339Nano, tsStr); err == nil {
+				r.Timestamp = t
+			} else if t, err := time.Parse(time.RFC3339, tsStr); err == nil {
+				r.Timestamp = t
+			}
 			if cost.Valid {
 				r.CostUSD = &cost.Float64
 			}

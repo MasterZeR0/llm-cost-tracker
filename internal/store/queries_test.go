@@ -152,4 +152,21 @@ func TestStore_Queries(t *testing.T) {
 	if len(recentAll) != 3 {
 		t.Fatalf("expected 3 requests, got %d", len(recentAll))
 	}
+
+	// Recent requests with period filtering
+	recentToday, err := st.GetRecentRequests(10, "today")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recentToday) != 1 || recentToday[0].ID != "r1" {
+		t.Fatalf("expected 1 recent request today (r1), got %d", len(recentToday))
+	}
+
+	recentMonth, err := st.GetRecentRequests(10, "month")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recentMonth) != 2 {
+		t.Fatalf("expected 2 recent requests this month (r1, r2), got %d", len(recentMonth))
+	}
 }
