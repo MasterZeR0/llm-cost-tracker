@@ -62,7 +62,8 @@ func (s *Server) handleToolUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRecentRequests(w http.ResponseWriter, r *http.Request) {
-	reqs, err := s.store.GetRecentRequests(50)
+	period := r.URL.Query().Get("period")
+	reqs, err := s.store.GetRecentRequests(50, period)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

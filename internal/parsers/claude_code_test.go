@@ -234,3 +234,31 @@ func TestClaudeCodeParser_InvalidJSON(t *testing.T) {
 		t.Fatalf("expected offset %d, got %d", len(content), newState.LastOffset)
 	}
 }
+
+func TestClaudeCodeParser_BillingErrorStatus(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "error_session.jsonl")
+
+	errorLine := `{"type":"assistant","uuid":"12074963-9a6a-484a-b018-06fa1935ca69","timestamp":"2026-09-19T19:47:49.318Z","message":{"model":"<synthetic>","role":"assistant","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"content":[{"type":"text","text":"Credit balance is too low"}]},"error":"billing_error","isApiErrorMessage":true}` + "\n"
+	if err := os.WriteFile(logFile, []byte(errorLine), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	parser := &parsers.ClaudeCodeParser{}
+	state := store.SyncState{
+		SourcePath: logFile,
+		Tool:       "claude_code",
+		LastOffset: 0,
+	}
+
+	reqs, _, err := parser.Parse(parsers.DataSource{Path: logFile, Type: "jsonl"}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("expected 1 request parsed from error event, got %d", len(reqs))
+	}
+	if reqs[0].Status != "error" {
+		t.Errorf("expected status 'error' for billing error event, got %q", reqs[0].Status)
+	}
+}

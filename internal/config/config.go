@@ -27,12 +27,13 @@ type DashboardConfig struct {
 }
 
 type Config struct {
-	DataDir      string                `yaml:"data_dir"`
-	StoreContent bool                  `yaml:"store_content"`
-	LogLevel     string                `yaml:"log_level"`
-	Tools        map[string]ToolConfig `yaml:"tools"`
-	Daemon       DaemonConfig          `yaml:"daemon"`
-	Dashboard    DashboardConfig       `yaml:"dashboard"`
+	DataDir           string                `yaml:"data_dir"`
+	StoreContent      bool                  `yaml:"store_content"`
+	LogLevel          string                `yaml:"log_level"`
+	DisableOtherTools bool                  `yaml:"disable_other_tools,omitempty"`
+	Tools             map[string]ToolConfig `yaml:"tools"`
+	Daemon            DaemonConfig          `yaml:"daemon"`
+	Dashboard         DashboardConfig       `yaml:"dashboard"`
 }
 
 func ExpandHome(path string) string {
@@ -102,8 +103,22 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	var raw struct {
+		DisableOtherTools bool                  `yaml:"disable_other_tools"`
+		Tools             map[string]ToolConfig `yaml:"tools"`
+	}
+	_ = yaml.Unmarshal(data, &raw)
+
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
+	}
+	if raw.DisableOtherTools {
+		for toolName, toolCfg := range cfg.Tools {
+			if _, specified := raw.Tools[toolName]; !specified {
+				toolCfg.Enabled = false
+				cfg.Tools[toolName] = toolCfg
+			}
+		}
 	}
 	cfg.DataDir = ExpandHome(cfg.DataDir)
 	return cfg, nil

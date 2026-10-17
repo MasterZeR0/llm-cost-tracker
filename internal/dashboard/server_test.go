@@ -175,4 +175,19 @@ func TestDashboardAPI_AllEndpoints(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "LLM Cost Tracker") {
 		t.Fatalf("expected index.html content to contain 'LLM Cost Tracker'")
 	}
+
+	// 7. Recent requests with ?period=
+	req = httptest.NewRequest("GET", "/api/requests?period=today", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("requests?period=today: expected 200, got %d", w.Code)
+	}
+	var todayReqs []store.Request
+	if err := json.Unmarshal(w.Body.Bytes(), &todayReqs); err != nil {
+		t.Fatal(err)
+	}
+	if len(todayReqs) != 2 {
+		t.Fatalf("expected 2 requests for today, got %d", len(todayReqs))
+	}
 }

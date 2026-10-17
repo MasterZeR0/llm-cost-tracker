@@ -24,7 +24,7 @@ async function loadDashboard() {
   loadCostByModel(period);
   loadTokensByModel(period);
   loadToolUsage(period);
-  loadRequests();
+  loadRequests(period);
 }
 
 async function loadCostOverTime(period) {
@@ -101,8 +101,9 @@ async function loadToolUsage(period) {
   });
 }
 
-async function loadRequests() {
-  const reqs = await fetchJSON('/api/requests');
+async function loadRequests(period) {
+  const url = period ? `/api/requests?period=${encodeURIComponent(period)}` : '/api/requests';
+  const reqs = await fetchJSON(url);
   const tbody = document.getElementById('requests-table');
   tbody.innerHTML = '';
   reqs.forEach(r => {

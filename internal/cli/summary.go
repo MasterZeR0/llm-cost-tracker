@@ -14,6 +14,14 @@ var periodFlag string
 var summaryCmd = &cobra.Command{
 	Use:   "summary",
 	Short: "Show cost, token, and latency summary in the terminal",
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		switch periodFlag {
+		case "today", "week", "month", "all":
+			return nil
+		default:
+			return fmt.Errorf("invalid period %q: must be one of today, week, month, all", periodFlag)
+		}
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return RenderSummary(os.Stdout, st, periodFlag)
 	},
@@ -24,6 +32,12 @@ func init() {
 }
 
 func RenderSummary(w io.Writer, s *store.Store, period string) error {
+	switch period {
+	case "today", "week", "month", "all":
+	default:
+		return fmt.Errorf("invalid period %q: must be one of today, week, month, all", period)
+	}
+
 	stats, err := s.GetOverview(period)
 	if err != nil {
 		return err

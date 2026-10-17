@@ -42,11 +42,13 @@ func (p *ClaudeCodeParser) Discover(cfg config.ToolConfig) ([]DataSource, error)
 }
 
 type claudeAssistantEvent struct {
-	Type       string   `json:"type"`
-	CostUSD    *float64 `json:"costUSD"`
-	DurationMS *int64   `json:"durationMs"`
-	Timestamp  string   `json:"timestamp,omitempty"`
-	Message    struct {
+	Type              string   `json:"type"`
+	CostUSD           *float64 `json:"costUSD"`
+	DurationMS        *int64   `json:"durationMs"`
+	Timestamp         string   `json:"timestamp,omitempty"`
+	Error             string   `json:"error,omitempty"`
+	IsApiErrorMessage bool     `json:"isApiErrorMessage,omitempty"`
+	Message           struct {
 		Model string `json:"model"`
 		Usage struct {
 			InputTokens              int64 `json:"input_tokens"`
@@ -79,6 +81,8 @@ func (p *ClaudeCodeParser) Parse(source DataSource, state store.SyncState) ([]st
 	var requests []store.Request
 	currentOffset := state.LastOffset
 	sessionID := strings.TrimSuffix(filepath.Base(source.Path), ".jsonl")
+	var prevTs time.Time
+	sameTsCount := int64(0)
 
 	for {
 		line, err := reader.ReadBytes('\n')
@@ -92,12 +96,27 @@ func (p *ClaudeCodeParser) Parse(source DataSource, state store.SyncState) ([]st
 			if jsonErr := json.Unmarshal(line, &evt); jsonErr == nil && evt.Type == "assistant" {
 				ts := time.Now().UTC().Add(time.Duration(len(requests)) * time.Second)
 				if evt.Timestamp != "" {
-					if parsedTs, err := time.Parse(time.RFC3339, evt.Timestamp); err == nil {
+					if parsedTs, err := time.Parse(time.RFC3339Nano, evt.Timestamp); err == nil {
 						ts = parsedTs
-					} else if parsedTs, err := time.Parse(time.RFC3339Nano, evt.Timestamp); err == nil {
+					} else if parsedTs, err := time.Parse(time.RFC3339, evt.Timestamp); err == nil {
 						ts = parsedTs
 					}
 				}
+				if ts.Equal(prevTs) {
+					sameTsCount++
+					ts = ts.Add(time.Duration(sameTsCount) * time.Microsecond)
+				} else {
+					prevTs = ts
+					sameTsCount = 0
+				}
+
+				status := "success"
+				if evt.Error != "" {
+					status = "error"
+				} else if evt.IsApiErrorMessage {
+					status = "error"
+				}
+
 				req := store.Request{
 					ID:               uuid.New().String(),
 					Tool:             "claude_code",
@@ -111,7 +130,7 @@ func (p *ClaudeCodeParser) Parse(source DataSource, state store.SyncState) ([]st
 					TotalTokens:      evt.Message.Usage.InputTokens + evt.Message.Usage.OutputTokens,
 					CostUSD:          evt.CostUSD,
 					LatencyMS:        evt.DurationMS,
-					Status:           "success",
+					Status:           status,
 					SourceFile:       source.Path,
 					RawData:          strings.TrimRight(string(line), "\r\n"),
 				}

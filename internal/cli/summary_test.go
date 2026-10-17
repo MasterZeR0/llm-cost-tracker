@@ -112,3 +112,18 @@ func TestRenderSummary_WithBreakdown(t *testing.T) {
 		t.Fatalf("expected model names: %s", out)
 	}
 }
+
+func TestRenderSummary_InvalidPeriod(t *testing.T) {
+	tmpDir := t.TempDir()
+	st, err := store.NewStore(filepath.Join(tmpDir, "invalid.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	var buf bytes.Buffer
+	err = cli.RenderSummary(&buf, st, "invalid_period")
+	if err == nil {
+		t.Fatal("expected error for invalid period, got nil")
+	}
+}

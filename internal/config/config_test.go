@@ -100,3 +100,36 @@ func TestExpandHome(t *testing.T) {
 		t.Fatalf("expected %s, got %s", nonTilde, config.ExpandHome(nonTilde))
 	}
 }
+
+func TestLoadConfig_DisableOtherTools(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+disable_other_tools: true
+tools:
+  claude_code:
+    enabled: true
+`
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	if !cfg.Tools["claude_code"].Enabled {
+		t.Fatal("expected claude_code enabled")
+	}
+	// All other default tools should be disabled
+	if cfg.Tools["agy"].Enabled {
+		t.Fatal("expected agy disabled by disable_other_tools")
+	}
+	if cfg.Tools["aider"].Enabled {
+		t.Fatal("expected aider disabled by disable_other_tools")
+	}
+	if cfg.Tools["codex"].Enabled {
+		t.Fatal("expected codex disabled by disable_other_tools")
+	}
+}
