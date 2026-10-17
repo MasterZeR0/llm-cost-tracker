@@ -61,33 +61,35 @@ func (d *Daemon) Start(ctx context.Context) error {
 	var eventsCh <-chan fsnotify.Event
 	var errorsCh <-chan error
 
-	watcher, err := fsnotify.NewWatcher()
-	if err == nil {
-		defer watcher.Close()
-		eventsCh = watcher.Events
-		errorsCh = watcher.Errors
+	if d.cfg.Daemon.WatchFSEvents {
+		watcher, err := fsnotify.NewWatcher()
+		if err == nil {
+			defer watcher.Close()
+			eventsCh = watcher.Events
+			errorsCh = watcher.Errors
 
-		for _, tool := range d.cfg.Tools {
-			if !tool.Enabled {
-				continue
+			for _, tool := range d.cfg.Tools {
+				if !tool.Enabled {
+					continue
+				}
+				for _, p := range tool.Paths {
+					expanded := config.ExpandHome(p)
+					_ = watcher.Add(expanded)
+				}
+				if tool.AnalyticsLog != "" {
+					expanded := config.ExpandHome(tool.AnalyticsLog)
+					_ = watcher.Add(expanded)
+					_ = watcher.Add(filepath.Dir(expanded))
+				}
 			}
-			for _, p := range tool.Paths {
-				expanded := config.ExpandHome(p)
-				_ = watcher.Add(expanded)
-			}
-			if tool.AnalyticsLog != "" {
-				expanded := config.ExpandHome(tool.AnalyticsLog)
-				_ = watcher.Add(expanded)
-				_ = watcher.Add(filepath.Dir(expanded))
-			}
+		} else {
+			slog.Warn("failed to initialize fsnotify watcher, relying on polling only", "err", err)
 		}
-	} else {
-		slog.Warn("failed to initialize fsnotify watcher, relying on polling only", "err", err)
 	}
 
 	pollInterval := d.cfg.Daemon.PollInterval
 	if pollInterval <= 0 {
-		pollInterval = 10 * time.Second
+		pollInterval = 30 * time.Second
 	}
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
