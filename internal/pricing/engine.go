@@ -39,6 +39,58 @@ func NewEngine(customPrices map[string]ModelPrice) *Engine {
 	}
 }
 
+var knownProviderPrefixes = []string{
+	"anthropic/",
+	"openai/",
+	"google/",
+	"openrouter/",
+	"meta-llama/",
+	"mistralai/",
+	"cohere/",
+	"bedrock/",
+	"azure/",
+	"together/",
+	"deepseek/",
+	"groq/",
+	"amazon/",
+}
+
+func getModelCandidates(modelLower string) []string {
+	candidates := []string{modelLower}
+	for _, p := range knownProviderPrefixes {
+		if strings.HasPrefix(modelLower, p) {
+			trimmed := strings.TrimPrefix(modelLower, p)
+			if trimmed != "" {
+				candidates = append(candidates, trimmed)
+			}
+		}
+	}
+	if idx := strings.LastIndex(modelLower, "/"); idx >= 0 && idx < len(modelLower)-1 {
+		base := modelLower[idx+1:]
+		var exists bool
+		for _, c := range candidates {
+			if c == base {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			candidates = append(candidates, base)
+		}
+	}
+	return candidates
+}
+
+func matchPattern(pattern, candidate string) bool {
+	if match, err := filepath.Match(pattern, candidate); err == nil && match {
+		return true
+	}
+	if !strings.Contains(pattern, "*") && strings.Contains(candidate, pattern) {
+		return true
+	}
+	return false
+}
+
 func (e *Engine) CalculateCost(model string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) (*float64, bool) {
 	if model == "" {
 		return nil, false
@@ -52,22 +104,36 @@ func (e *Engine) CalculateCost(model string, inputTokens, outputTokens, cacheRea
 	}
 
 	modelLower := strings.ToLower(model)
+	candidates := getModelCandidates(modelLower)
+
 	var price ModelPrice
 	var matched bool
 
 	for _, pattern := range patterns {
 		patLower := strings.ToLower(pattern)
-		match, err := filepath.Match(patLower, modelLower)
-		if err == nil && match {
-			price = e.prices[pattern]
-			matched = true
+		for _, candidate := range candidates {
+			if matchPattern(patLower, candidate) {
+				price = e.prices[pattern]
+				matched = true
+				break
+			}
+		}
+		if matched {
 			break
 		}
-		// Also support contains check if no wildcard
-		if !strings.Contains(pattern, "*") && strings.Contains(modelLower, patLower) {
-			price = e.prices[pattern]
-			matched = true
-			break
+		// Also if pattern has a provider prefix and candidate didn't match directly, try stripped pattern against modelLower
+		if strings.Contains(patLower, "/") {
+			patCandidates := getModelCandidates(patLower)
+			for _, patCand := range patCandidates[1:] {
+				if matchPattern(patCand, modelLower) {
+					price = e.prices[pattern]
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
 		}
 	}
 

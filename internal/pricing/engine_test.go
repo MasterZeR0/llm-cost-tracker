@@ -141,3 +141,73 @@ func TestPricingEngine_CaseInsensitive(t *testing.T) {
 		t.Fatalf("expected cost ~0.75, got %f", *cost)
 	}
 }
+
+func TestPricingEngine_ProviderPrefixedModels(t *testing.T) {
+	e := pricing.NewEngine(nil)
+
+	// anthropic/claude-3-5-sonnet-20241022 with wildcard claude-3-5-sonnet*
+	costSonnet, ok := e.CalculateCost("anthropic/claude-3-5-sonnet-20241022", 1_000_000, 1_000_000, 0, 0)
+	if !ok || costSonnet == nil {
+		t.Fatal("expected anthropic/claude-3-5-sonnet-20241022 to match claude-3-5-sonnet*")
+	}
+	expectedSonnet := 18.00 // 3.00 + 15.00
+	if *costSonnet < expectedSonnet-0.01 || *costSonnet > expectedSonnet+0.01 {
+		t.Fatalf("expected cost ~18.00, got %f", *costSonnet)
+	}
+
+	// openai/gpt-4o
+	cost4o, ok := e.CalculateCost("openai/gpt-4o", 1_000_000, 1_000_000, 0, 0)
+	if !ok || cost4o == nil {
+		t.Fatal("expected openai/gpt-4o to match gpt-4o")
+	}
+	expected4o := 12.50 // 2.50 + 10.00
+	if *cost4o < expected4o-0.01 || *cost4o > expected4o+0.01 {
+		t.Fatalf("expected cost ~12.50, got %f", *cost4o)
+	}
+
+	// openai/gpt-4o-mini
+	costMini, ok := e.CalculateCost("openai/gpt-4o-mini", 1_000_000, 1_000_000, 0, 0)
+	if !ok || costMini == nil {
+		t.Fatal("expected openai/gpt-4o-mini to match gpt-4o-mini")
+	}
+	expectedMini := 0.75 // 0.15 + 0.60
+	if *costMini < expectedMini-0.001 || *costMini > expectedMini+0.001 {
+		t.Fatalf("expected cost ~0.75, got %f", *costMini)
+	}
+
+	// google/gemini-2.0-flash-exp
+	costFlash, ok := e.CalculateCost("google/gemini-2.0-flash-exp", 1_000_000, 1_000_000, 0, 0)
+	if !ok || costFlash == nil {
+		t.Fatal("expected google/gemini-2.0-flash-exp to match gemini-2*flash*")
+	}
+	expectedFlash := 0.50 // 0.10 + 0.40
+	if *costFlash < expectedFlash-0.01 || *costFlash > expectedFlash+0.01 {
+		t.Fatalf("expected cost ~0.50, got %f", *costFlash)
+	}
+
+	// nested / multi-prefix: openrouter/anthropic/claude-3-5-sonnet
+	costOpenRouter, ok := e.CalculateCost("openrouter/anthropic/claude-3-5-sonnet", 1_000_000, 1_000_000, 0, 0)
+	if !ok || costOpenRouter == nil {
+		t.Fatal("expected openrouter/anthropic/claude-3-5-sonnet to match")
+	}
+	if *costOpenRouter < expectedSonnet-0.01 || *costOpenRouter > expectedSonnet+0.01 {
+		t.Fatalf("expected cost ~18.00, got %f", *costOpenRouter)
+	}
+
+	// Custom pattern with provider prefix matching unprefixed input
+	custom := map[string]pricing.ModelPrice{
+		"mistralai/mistral-large": {
+			InputPerMTok:  2.00,
+			OutputPerMTok: 6.00,
+		},
+	}
+	eCustom := pricing.NewEngine(custom)
+	costMistral, ok := eCustom.CalculateCost("mistral-large", 1_000_000, 1_000_000, 0, 0)
+	if !ok || costMistral == nil {
+		t.Fatal("expected mistral-large to match custom mistralai/mistral-large")
+	}
+	expectedMistral := 8.00
+	if *costMistral < expectedMistral-0.01 || *costMistral > expectedMistral+0.01 {
+		t.Fatalf("expected cost ~8.00, got %f", *costMistral)
+	}
+}
