@@ -1,0 +1,45 @@
+{
+  "session_id": "session-001",
+  "model": "claude-3-5-sonnet",
+  "created_at": "2026-10-18T10:00:00Z",
+  "steps": [
+    {
+      "step_index": 1,
+      "timestamp": "2026-10-18T10:00:00Z",
+      "model": "claude-3-5-sonnet",
+      "user_prompt": "Search the codebase for CalculateCost function",
+      "assistant_response": "I found CalculateCost in internal/pricing/engine.go",
+      "duration_ms": 1250,
+      "tokens": {
+        "input_tokens": 850,
+        "output_tokens": 120
+      },
+      "tool_calls": [
+        {
+          "id": "call-001",
+          "name": "search_codebase",
+          "status": "success"
+        }
+      ]
+    },
+    {
+      "step_index": 2,
+      "timestamp": "2026-10-18T10:00:05Z",
+      "model": "claude-3-5-sonnet",
+      "user_prompt": "Run unit tests",
+      "assistant_response": "Running tests with go test...",
+      "duration_ms": 2300,
+      "tokens": {
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "tool_calls": [
+        {
+          "id": "call-002",
+          "name": "run_command",
+          "status": "error"
+        }
+      ]
+    }
+  ]
+}
