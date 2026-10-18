@@ -45,22 +45,24 @@ A fast, lightweight Go daemon and CLI that automatically tracks costs, tokens, l
 
 * **Anthropic Family**:
   * Claude Opus 4.x (4.5, 4.6, 4.7, 4.8) & Claude Opus 5
-  * Claude 3.7 Sonnet & Claude 3.5 Sonnet
-  * Claude 3.5 Haiku & Claude Haiku
+  * Claude 3 Opus & Claude 3.7 / 3.5 Sonnet
+  * Claude 3.5 Haiku & Claude 3 Haiku
 * **Google Gemini Family**:
   * Gemini 3 Flash & Gemini 3 Pro
   * Gemini 2.5 Pro
   * Gemini 2.0 Flash & Gemini 2.0 Pro
   * Gemini 1.5 Flash & Gemini 1.5 Pro
 * **OpenAI Family**:
+  * GPT-4.5 & GPT-4.5-preview
   * GPT-4o & GPT-4o-mini
+  * GPT-4 Turbo & GPT-4
   * o1 & o1-mini
   * o3, o3-mini & o3-pro
 * **DeepSeek Family**:
-  * DeepSeek-V3 (`deepseek-chat`)
-  * DeepSeek-R1 (`deepseek-reasoner`)
+  * DeepSeek-V3 (`deepseek-chat`, `deepseek-v3`, `deepseek-coder`)
+  * DeepSeek-R1 (`deepseek-reasoner`, `deepseek-r1`)
 
-*(Custom pricing rates and newer models can also be overridden or added dynamically via the embedded pricing catalog).*
+*(Custom pricing rates and unpriced/internal assistant models like `cursor-small` or `cascade-base` can also be configured dynamically via the embedded pricing catalog or custom config).*
 
 ---
 
@@ -122,6 +124,9 @@ llm-track dashboard
   - Direct log & session ingestion for **Cline**, **Roo Code**, **Cursor**, **Windsurf**, and **GitHub Copilot CLI**.
 - [ ] **Local LLM Runtimes (Phase 2)**:
   - Local LLM tracking for **Ollama** and **vLLM** endpoints.
+- [ ] **Tiered & Context-Window-Dependent Pricing**:
+  - Threshold pricing support for long-context models (e.g., Gemini Pro $\le 128\text{k}$ vs $> 128\text{k}$ token pricing tiers).
+  - Dynamic rate scaling based on total prompt + cache context token counts per turn.
 - [ ] **Budgeting & Spend Threshold Alerts**:
   - Daily/weekly/monthly spend budgets with configurable limits.
   - Webhook, Slack, Discord, and desktop notifications when approaching or exceeding cost ceilings.

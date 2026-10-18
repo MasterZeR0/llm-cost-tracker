@@ -267,3 +267,9 @@ code {
   color: var(--text);
 }
 
+@media (max-width: 600px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

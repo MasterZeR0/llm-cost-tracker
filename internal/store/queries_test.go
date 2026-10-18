@@ -132,6 +132,40 @@ func TestStore_Queries(t *testing.T) {
 		t.Fatalf("expected 3 tools, got %d", len(tu))
 	}
 
+	// Latency Over Time
+	lot, err := st.GetLatencyOverTime("all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lot) != 3 {
+		t.Fatalf("expected 3 days in latency over time, got %d", len(lot))
+	}
+
+	lotMonth, err := st.GetLatencyOverTime("month")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lotMonth) != 2 {
+		t.Fatalf("expected 2 days in month latency over time, got %d", len(lotMonth))
+	}
+
+	// Model Usage
+	mu, err := st.GetModelUsage("all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mu) != 3 {
+		t.Fatalf("expected 3 models in model usage, got %d", len(mu))
+	}
+	for _, m := range mu {
+		if m.RequestCount != 1 {
+			t.Fatalf("expected 1 request count, got %d", m.RequestCount)
+		}
+		if m.Percentage < 33.0 || m.Percentage > 34.0 {
+			t.Fatalf("expected ~33.3%%, got %f", m.Percentage)
+		}
+	}
+
 	// 6. Recent Requests
 	recent, err := st.GetRecentRequests(2)
 	if err != nil {
@@ -471,6 +505,98 @@ func TestStore_AnalyticsQueries(t *testing.T) {
 		if idxExists == 0 {
 			t.Errorf("expected index %s to exist in database", idx)
 		}
+	}
+}
+
+func TestStore_LatencyOverTimeAndModelUsage(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_latency_model.db")
+
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// 1. Zero state test
+	lotZero, err := st.GetLatencyOverTime("all")
+	if err != nil {
+		t.Fatalf("unexpected error on empty GetLatencyOverTime: %v", err)
+	}
+	if len(lotZero) != 0 {
+		t.Fatalf("expected empty slice, got %d", len(lotZero))
+	}
+
+	muZero, err := st.GetModelUsage("all")
+	if err != nil {
+		t.Fatalf("unexpected error on empty GetModelUsage: %v", err)
+	}
+	if len(muZero) != 0 {
+		t.Fatalf("expected empty slice, got %d", len(muZero))
+	}
+
+	// 2. Insert requests with various latencies and models
+	now := time.Now().UTC()
+	lat500 := int64(500)
+	lat1500 := int64(1500)
+	lat0 := int64(0)
+	latNeg := int64(-100)
+
+	reqs := []store.Request{
+		{
+			ID: "r1", Tool: "claude_code", SessionID: "s1", Timestamp: now,
+			Model: "claude-3-7-sonnet", LatencyMS: &lat500, Status: "success",
+		},
+		{
+			ID: "r2", Tool: "claude_code", SessionID: "s2", Timestamp: now.Add(time.Minute),
+			Model: "claude-3-7-sonnet", LatencyMS: &lat1500, Status: "success",
+		},
+		{
+			ID: "r3", Tool: "aider", SessionID: "s3", Timestamp: now.Add(2 * time.Minute),
+			Model: "gpt-4o", LatencyMS: &lat0, Status: "success",
+		},
+		{
+			ID: "r4", Tool: "aider", SessionID: "s4", Timestamp: now.Add(3 * time.Minute),
+			Model: "gpt-4o", LatencyMS: &latNeg, Status: "success",
+		},
+		{
+			ID: "r5", Tool: "aider", SessionID: "s5", Timestamp: now.Add(4 * time.Minute),
+			Model: "gpt-4o", LatencyMS: nil, Status: "success",
+		},
+	}
+	if _, err := st.InsertRequests(reqs); err != nil {
+		t.Fatal(err)
+	}
+
+	lot, err := st.GetLatencyOverTime("today")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lot) != 1 {
+		t.Fatalf("expected 1 day in latency over time, got %d", len(lot))
+	}
+	if lot[0].AvgLatencyMS != 1000.0 {
+		t.Fatalf("expected avg latency 1000.0ms, got %f", lot[0].AvgLatencyMS)
+	}
+	if lot[0].RequestCount != 2 {
+		t.Fatalf("expected request count 2, got %d", lot[0].RequestCount)
+	}
+	if lot[0].Date != now.Format("2006-01-02") {
+		t.Fatalf("expected date %s, got %s", now.Format("2006-01-02"), lot[0].Date)
+	}
+
+	mu, err := st.GetModelUsage("today")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mu) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(mu))
+	}
+	if mu[0].Model != "gpt-4o" || mu[0].RequestCount != 3 || mu[0].Percentage != 60.0 {
+		t.Fatalf("unexpected mu[0]: %+v", mu[0])
+	}
+	if mu[1].Model != "claude-3-7-sonnet" || mu[1].RequestCount != 2 || mu[1].Percentage != 40.0 {
+		t.Fatalf("unexpected mu[1]: %+v", mu[1])
 	}
 }
 

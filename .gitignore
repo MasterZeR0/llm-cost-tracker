@@ -34,3 +34,5 @@ local/
 # Local reports
 QA_REPORT*.md
 FIX_REPORT*.md
+repomix-output.*
+

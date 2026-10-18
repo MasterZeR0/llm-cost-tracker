@@ -261,3 +261,90 @@ func TestPricingEngine_ProviderPrefixedModels(t *testing.T) {
 		t.Fatalf("expected cost ~8.00, got %f", *costMistral)
 	}
 }
+
+func TestPricingEngine_NewAssistantModels(t *testing.T) {
+	e := pricing.NewEngine(nil)
+
+	tests := []struct {
+		model            string
+		inputTokens      int64
+		outputTokens     int64
+		cacheReadTokens  int64
+		cacheWriteTokens int64
+		expectedCost     float64
+	}{
+		// Claude 3 Opus exact/dated
+		{
+			model:        "claude-3-opus-20240229",
+			inputTokens:  1_000_000,
+			outputTokens: 100_000,
+			expectedCost: 15.00 + 7.50, // 22.50
+		},
+		// Claude 3 Haiku exact/dated
+		{
+			model:        "claude-3-haiku-20240307",
+			inputTokens:  1_000_000,
+			outputTokens: 100_000,
+			expectedCost: 0.80 + 0.40, // 1.20
+		},
+		// GPT-4.5
+		{
+			model:           "gpt-4.5-preview",
+			inputTokens:     1_000_000,
+			outputTokens:    100_000,
+			cacheReadTokens: 1_000_000,
+			expectedCost:    75.00 + 15.00 + 37.50, // 127.50
+		},
+		// GPT-4-turbo
+		{
+			model:        "gpt-4-turbo-2024-04-09",
+			inputTokens:  1_000_000,
+			outputTokens: 100_000,
+			expectedCost: 10.00 + 3.00, // 13.00
+		},
+		// Legacy base GPT-4
+		{
+			model:        "gpt-4",
+			inputTokens:  1_000_000,
+			outputTokens: 100_000,
+			expectedCost: 30.00 + 6.00, // 36.00
+		},
+		// DeepSeek v3 alias
+		{
+			model:           "deepseek-v3",
+			inputTokens:     1_000_000,
+			outputTokens:    100_000,
+			cacheReadTokens: 1_000_000,
+			expectedCost:    0.14 + 0.028 + 0.014, // 0.182
+		},
+		// DeepSeek r1 alias
+		{
+			model:           "deepseek-r1",
+			inputTokens:     1_000_000,
+			outputTokens:    100_000,
+			cacheReadTokens: 1_000_000,
+			expectedCost:    0.55 + 0.219 + 0.14, // 0.909
+		},
+		// DeepSeek coder
+		{
+			model:        "deepseek-coder",
+			inputTokens:  1_000_000,
+			outputTokens: 100_000,
+			expectedCost: 0.14 + 0.028, // 0.168
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			cost, ok := e.CalculateCost(tt.model, tt.inputTokens, tt.outputTokens, tt.cacheReadTokens, tt.cacheWriteTokens)
+			if !ok || cost == nil {
+				t.Fatalf("expected model %q to match and return cost", tt.model)
+			}
+			diff := *cost - tt.expectedCost
+			if diff < -0.001 || diff > 0.001 {
+				t.Fatalf("model %q: expected cost ~%f, got %f", tt.model, tt.expectedCost, *cost)
+			}
+		})
+	}
+}
+

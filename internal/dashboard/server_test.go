@@ -165,7 +165,45 @@ func TestDashboardAPI_AllEndpoints(t *testing.T) {
 		t.Fatalf("expected 2 requests, got %d", len(reqs))
 	}
 
-	// 6. Static files - index.html
+	// 6. Latency over time
+	req = httptest.NewRequest("GET", "/api/latency-over-time?period=all", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("latency-over-time: expected 200, got %d", w.Code)
+	}
+	var latencyPoints []store.LatencyPoint
+	if err := json.Unmarshal(w.Body.Bytes(), &latencyPoints); err != nil {
+		t.Fatal(err)
+	}
+	if len(latencyPoints) != 1 {
+		t.Fatalf("expected 1 latency point, got %d", len(latencyPoints))
+	}
+	if latencyPoints[0].AvgLatencyMS != 600.0 || latencyPoints[0].RequestCount != 2 {
+		t.Fatalf("unexpected latency point: %+v", latencyPoints[0])
+	}
+
+	// 7. Model usage
+	req = httptest.NewRequest("GET", "/api/model-usage?period=all", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("model-usage: expected 200, got %d", w.Code)
+	}
+	var modelUsage []store.ModelUsagePoint
+	if err := json.Unmarshal(w.Body.Bytes(), &modelUsage); err != nil {
+		t.Fatal(err)
+	}
+	if len(modelUsage) != 2 {
+		t.Fatalf("expected 2 model usage points, got %d", len(modelUsage))
+	}
+	for _, mu := range modelUsage {
+		if mu.RequestCount != 1 || mu.Percentage != 50.0 {
+			t.Fatalf("unexpected model usage point: %+v", mu)
+		}
+	}
+
+	// 8. Static files - index.html
 	req = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
 	srv.Router().ServeHTTP(w, req)

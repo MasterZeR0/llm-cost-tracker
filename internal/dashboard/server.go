@@ -39,6 +39,8 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /api/cost-by-model", s.handleCostByModel)
 	s.router.HandleFunc("GET /api/tokens-by-model", s.handleTokensByModel)
 	s.router.HandleFunc("GET /api/tool-usage", s.handleToolUsage)
+	s.router.HandleFunc("GET /api/latency-over-time", s.handleLatencyOverTime)
+	s.router.HandleFunc("GET /api/model-usage", s.handleModelUsage)
 	s.router.HandleFunc("GET /api/requests", s.handleRecentRequests)
 	s.router.HandleFunc("GET /api/analytics/cache", s.handleAnalyticsCache)
 	s.router.HandleFunc("GET /api/analytics/tools", s.handleAnalyticsTools)

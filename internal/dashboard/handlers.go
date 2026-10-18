@@ -64,6 +64,26 @@ func (s *Server) handleToolUsage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, points)
 }
 
+func (s *Server) handleLatencyOverTime(w http.ResponseWriter, r *http.Request) {
+	period := r.URL.Query().Get("period")
+	points, err := s.store.GetLatencyOverTime(period)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, points)
+}
+
+func (s *Server) handleModelUsage(w http.ResponseWriter, r *http.Request) {
+	period := r.URL.Query().Get("period")
+	points, err := s.store.GetModelUsage(period)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, points)
+}
+
 func (s *Server) handleRecentRequests(w http.ResponseWriter, r *http.Request) {
 	period := r.URL.Query().Get("period")
 	reqs, err := s.store.GetRecentRequests(50, period)

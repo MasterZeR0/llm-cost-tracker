@@ -71,7 +71,9 @@ async function loadDashboard() {
   document.getElementById('turns-per-session').innerText = turnsPerSess.toFixed(1) + ' turns/sess';
 
   loadCostOverTime(period);
+  loadLatencyOverTime(period);
   loadCostByModel(period);
+  loadModelUsage(period);
   loadTokensByModel(period);
   loadToolUsage(period);
   loadToolInvocations(period);
@@ -105,6 +107,38 @@ async function loadCostOverTime(period) {
   });
 }
 
+async function loadLatencyOverTime(period) {
+  const data = await fetchJSON(`/api/latency-over-time?period=${encodeURIComponent(period)}`);
+  const points = data || [];
+  if (charts.latencyTime) charts.latencyTime.destroy();
+  charts.latencyTime = new Chart(document.getElementById('latencyTimeChart'), {
+    type: 'line',
+    data: {
+      labels: points.map(d => d.date),
+      datasets: [{
+        label: 'Avg Latency (s)',
+        data: points.map(d => ((d.avg_latency_ms || 0) / 1000).toFixed(2)),
+        borderColor: '#f0883e',
+        tension: 0.2,
+        fill: true,
+        backgroundColor: 'rgba(240, 136, 62, 0.1)'
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Seconds'
+          }
+        }
+      }
+    }
+  });
+}
+
 async function loadCostByModel(period) {
   const data = await fetchJSON(`/api/cost-by-model?period=${encodeURIComponent(period)}`);
   if (charts.costModel) charts.costModel.destroy();
@@ -119,6 +153,24 @@ async function loadCostByModel(period) {
       }]
     },
     options: { indexAxis: 'y', responsive: true }
+  });
+}
+
+async function loadModelUsage(period) {
+  const data = await fetchJSON(`/api/model-usage?period=${encodeURIComponent(period)}`);
+  const points = data || [];
+  if (charts.modelUsage) charts.modelUsage.destroy();
+  const colors = ['#58a6ff', '#3fb950', '#d29922', '#db61a2', '#a371f7', '#f85149', '#79c0ff', '#56d364', '#e3b341', '#f0883e'];
+  charts.modelUsage = new Chart(document.getElementById('modelUsageChart'), {
+    type: 'doughnut',
+    data: {
+      labels: points.map(d => `${d.model} (${(d.percentage || 0).toFixed(1)}%)`),
+      datasets: [{
+        data: points.map(d => d.request_count),
+        backgroundColor: colors.slice(0, points.length)
+      }]
+    },
+    options: { responsive: true }
   });
 }
 

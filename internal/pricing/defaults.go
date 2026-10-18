@@ -23,6 +23,12 @@ var DefaultModelPrices = map[string]ModelPrice{
 		CacheWritePerMTok: 5.00,
 	},
 	// Legacy / Base Claude 3/4 Opus
+	"claude-3-opus*": {
+		InputPerMTok:      15.00,
+		OutputPerMTok:     75.00,
+		CacheReadPerMTok:  1.50,
+		CacheWritePerMTok: 18.75,
+	},
 	"claude-opus*": {
 		InputPerMTok:      15.00,
 		OutputPerMTok:     75.00,
@@ -53,11 +59,24 @@ var DefaultModelPrices = map[string]ModelPrice{
 		CacheReadPerMTok:  0.08,
 		CacheWritePerMTok: 1.00,
 	},
+	"claude-3-haiku*": {
+		InputPerMTok:      0.80,
+		OutputPerMTok:     4.00,
+		CacheReadPerMTok:  0.08,
+		CacheWritePerMTok: 1.00,
+	},
 	"claude-haiku*": {
 		InputPerMTok:      0.80,
 		OutputPerMTok:     4.00,
 		CacheReadPerMTok:  0.08,
 		CacheWritePerMTok: 1.00,
+	},
+
+	// OpenAI GPT-4.5 Family
+	"gpt-4.5*": {
+		InputPerMTok:     75.00,
+		OutputPerMTok:    150.00,
+		CacheReadPerMTok: 37.50,
 	},
 
 	// OpenAI GPT-4o Family
@@ -70,6 +89,16 @@ var DefaultModelPrices = map[string]ModelPrice{
 		InputPerMTok:      0.15,
 		OutputPerMTok:     0.60,
 		CacheReadPerMTok:  0.075,
+	},
+
+	// OpenAI GPT-4 Turbo & Base
+	"gpt-4-turbo*": {
+		InputPerMTok:  10.00,
+		OutputPerMTok: 30.00,
+	},
+	"gpt-4": {
+		InputPerMTok:  30.00,
+		OutputPerMTok: 60.00,
 	},
 
 	// OpenAI Reasoning / o-Series Models
@@ -135,7 +164,22 @@ var DefaultModelPrices = map[string]ModelPrice{
 		OutputPerMTok:     0.28,
 		CacheReadPerMTok:  0.014,
 	},
+	"deepseek-v3*": {
+		InputPerMTok:      0.14,
+		OutputPerMTok:     0.28,
+		CacheReadPerMTok:  0.014,
+	},
+	"deepseek-coder*": {
+		InputPerMTok:      0.14,
+		OutputPerMTok:     0.28,
+		CacheReadPerMTok:  0.014,
+	},
 	"deepseek-reasoner*": {
+		InputPerMTok:      0.55,
+		OutputPerMTok:     2.19,
+		CacheReadPerMTok:  0.14,
+	},
+	"deepseek-r1*": {
 		InputPerMTok:      0.55,
 		OutputPerMTok:     2.19,
 		CacheReadPerMTok:  0.14,

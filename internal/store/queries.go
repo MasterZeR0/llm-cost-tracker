@@ -34,6 +34,18 @@ type ToolUsagePoint struct {
 	TotalCost    float64 `json:"total_cost"`
 }
 
+type LatencyPoint struct {
+	Date         string  `json:"date"`
+	AvgLatencyMS float64 `json:"avg_latency_ms"`
+	RequestCount int64   `json:"request_count"`
+}
+
+type ModelUsagePoint struct {
+	Model        string  `json:"model"`
+	RequestCount int64   `json:"request_count"`
+	Percentage   float64 `json:"percentage"`
+}
+
 func periodClause(period string) string {
 	switch period {
 	case "today":
@@ -266,6 +278,78 @@ func (s *Store) GetToolUsage(period string) ([]ToolUsagePoint, error) {
 			points = append(points, pt)
 		}
 	}
+	return points, nil
+}
+
+func (s *Store) GetLatencyOverTime(period string) ([]LatencyPoint, error) {
+	clause := periodClause(period)
+	where := clause
+	if where == "" {
+		where = "WHERE latency_ms IS NOT NULL AND latency_ms > 0"
+	} else {
+		where = where + " AND latency_ms IS NOT NULL AND latency_ms > 0"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT strftime('%%Y-%%m-%%d', timestamp) as day, coalesce(avg(latency_ms), 0.0), count(*)
+		FROM requests
+		%s
+		GROUP BY day
+		ORDER BY day ASC
+	`, where)
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	points := make([]LatencyPoint, 0)
+	for rows.Next() {
+		var pt LatencyPoint
+		if err := rows.Scan(&pt.Date, &pt.AvgLatencyMS, &pt.RequestCount); err == nil {
+			points = append(points, pt)
+		}
+	}
+	return points, rows.Err()
+}
+
+func (s *Store) GetModelUsage(period string) ([]ModelUsagePoint, error) {
+	clause := periodClause(period)
+	query := fmt.Sprintf(`
+		SELECT coalesce(model, 'unknown'), count(*)
+		FROM requests
+		%s
+		GROUP BY model
+		ORDER BY count(*) DESC
+	`, clause)
+
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	points := make([]ModelUsagePoint, 0)
+	var totalRequests int64
+	for rows.Next() {
+		var pt ModelUsagePoint
+		if err := rows.Scan(&pt.Model, &pt.RequestCount); err != nil {
+			return nil, err
+		}
+		totalRequests += pt.RequestCount
+		points = append(points, pt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if totalRequests > 0 {
+		for i := range points {
+			points[i].Percentage = (float64(points[i].RequestCount) / float64(totalRequests)) * 100.0
+		}
+	}
+
 	return points, nil
 }
 
