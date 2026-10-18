@@ -80,6 +80,26 @@ func DefaultConfig() *Config {
 				Enabled: true,
 				Paths:   []string{filepath.Join(home, ".local", "share", "opencode", "opencode.db")},
 			},
+			"cline": {
+				Enabled: true,
+				Paths:   DefaultPathsForTool("cline"),
+			},
+			"roo_code": {
+				Enabled: true,
+				Paths:   DefaultPathsForTool("roo_code"),
+			},
+			"cursor": {
+				Enabled: true,
+				Paths:   DefaultPathsForTool("cursor"),
+			},
+			"windsurf": {
+				Enabled: true,
+				Paths:   DefaultPathsForTool("windsurf"),
+			},
+			"copilot_cli": {
+				Enabled: true,
+				Paths:   DefaultPathsForTool("copilot_cli"),
+			},
 		},
 		Daemon: DaemonConfig{
 			PollInterval:  30 * time.Second,
