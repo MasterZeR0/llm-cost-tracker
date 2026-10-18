@@ -393,6 +393,16 @@ func (s *Store) GetSessionSummaries(period string, limit int) ([]SessionSummary,
 }
 
 func (s *Store) GetSessionDetail(sessionID string) (*SessionDetail, error) {
+	var fullSessionID string
+	if err := s.db.QueryRow(`
+		SELECT session_id FROM requests
+		WHERE session_id = ? OR session_id LIKE ? || '%'
+		LIMIT 1
+	`, sessionID, sessionID).Scan(&fullSessionID); err != nil {
+		return nil, err
+	}
+	sessionID = fullSessionID
+
 	querySummary := `
 		SELECT 
 			session_id,
@@ -415,6 +425,7 @@ func (s *Store) GetSessionDetail(sessionID string) (*SessionDetail, error) {
 	var sm SessionSummary
 	var startStr, endStr string
 	err := s.db.QueryRow(querySummary, sessionID).Scan(
+
 		&sm.SessionID,
 		&sm.Tool,
 		&startStr,
