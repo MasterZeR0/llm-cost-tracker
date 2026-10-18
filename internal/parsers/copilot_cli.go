@@ -172,9 +172,6 @@ func (p *CopilotCLIParser) Parse(source DataSource, state store.SyncState) ([]st
 				cost, ok := pricingEngine.CalculateCost(model, inTokens, outTokens, 0, 0)
 				if ok {
 					costUSD = cost
-				} else {
-					zero := 0.0
-					costUSD = &zero
 				}
 			}
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers/tokenestimator"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers/vscdb"
@@ -331,7 +330,19 @@ func (p *CursorParser) Parse(source DataSource, state store.SyncState) ([]store.
 	pricingEngine := pricing.NewEngine(nil)
 	var requests []store.Request
 	globalTurnIndex := int64(0)
-	var lastID string
+
+	var composerTurnCounts map[string]int
+	if state.LastRowID != "" {
+		_ = json.Unmarshal([]byte(state.LastRowID), &composerTurnCounts)
+	}
+	if composerTurnCounts == nil {
+		composerTurnCounts = make(map[string]int)
+	}
+
+	newComposerTurnCounts := make(map[string]int)
+	for k, v := range composerTurnCounts {
+		newComposerTurnCounts[k] = v
+	}
 
 	for _, comp := range composers {
 		composerID := comp.ComposerID
@@ -341,6 +352,7 @@ func (p *CursorParser) Parse(source DataSource, state store.SyncState) ([]store.
 		if composerID == "" {
 			composerID = "unknown"
 		}
+		prevTurnCount := composerTurnCounts[composerID]
 
 		bubbles := comp.Conversation
 		if len(bubbles) == 0 {
@@ -463,7 +475,7 @@ func (p *CursorParser) Parse(source DataSource, state store.SyncState) ([]store.
 						toolErrorCount++
 					}
 					toolCalls = append(toolCalls, store.ToolCall{
-						ID:        uuid.New().String(),
+						ID:        fmt.Sprintf("%s:tool:%d", reqID, len(toolCalls)),
 						RequestID: reqID,
 						SessionID: composerID,
 						ToolName:  actName,
@@ -493,9 +505,8 @@ func (p *CursorParser) Parse(source DataSource, state store.SyncState) ([]store.
 				}
 
 				globalTurnIndex++
-				if globalTurnIndex > state.LastOffset {
+				if turnIdx >= prevTurnCount {
 					requests = append(requests, req)
-					lastID = reqID
 				}
 
 				userPrompt = ""
@@ -503,11 +514,12 @@ func (p *CursorParser) Parse(source DataSource, state store.SyncState) ([]store.
 				turnIdx++
 			}
 		}
+		newComposerTurnCounts[composerID] = turnIdx
 	}
 
 	state.LastOffset = globalTurnIndex
-	if lastID != "" {
-		state.LastRowID = lastID
+	if rowIDBytes, err := json.Marshal(newComposerTurnCounts); err == nil {
+		state.LastRowID = string(rowIDBytes)
 	}
 	state.LastModified = &modTime
 	state.SourcePath = source.Path

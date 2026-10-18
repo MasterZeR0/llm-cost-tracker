@@ -223,3 +223,57 @@ func TestWindsurfParser_Discover(t *testing.T) {
 		t.Fatalf("expected 2 sources discovered, got %d", len(sources))
 	}
 }
+
+func TestWindsurfParser_PartialWriteResilience(t *testing.T) {
+	dir := t.TempDir()
+	jsonPath := filepath.Join(dir, "active_session.json")
+
+	// 1. Simulate partial/incomplete write during active typing/streaming
+	if err := os.WriteFile(jsonPath, []byte(`{"session_id": "ws-partial", "steps": [{"step_index": 1`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := &parsers.WindsurfParser{}
+	initialState := store.SyncState{SourcePath: jsonPath, Tool: "windsurf", LastOffset: 0}
+
+	reqs1, newState1, err := p.Parse(parsers.DataSource{Path: jsonPath, Type: "json"}, initialState)
+	if err == nil {
+		t.Fatal("expected error on unmarshalling partial JSON, got nil")
+	}
+	if len(reqs1) != 0 {
+		t.Fatalf("expected 0 requests from partial JSON, got %d", len(reqs1))
+	}
+	if newState1.LastOffset != 0 {
+		t.Fatalf("expected LastOffset to remain 0 after partial write error, got %d", newState1.LastOffset)
+	}
+
+	// 2. Simulate writer completing the JSON file
+	completeJSON := `{
+		"session_id": "ws-partial",
+		"steps": [
+			{
+				"step_index": 1,
+				"user_prompt": "hello",
+				"assistant_response": "world",
+				"tokens": { "input_tokens": 100, "output_tokens": 50 }
+			}
+		]
+	}`
+	if err := os.WriteFile(jsonPath, []byte(completeJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	reqs2, newState2, err := p.Parse(parsers.DataSource{Path: jsonPath, Type: "json"}, newState1)
+	if err != nil {
+		t.Fatalf("Parse on completed JSON failed: %v", err)
+	}
+	if len(reqs2) != 1 {
+		t.Fatalf("expected 1 request after complete write, got %d", len(reqs2))
+	}
+	if reqs2[0].ID != "windsurf:ws-partial:1" {
+		t.Errorf("expected ID windsurf:ws-partial:1, got %s", reqs2[0].ID)
+	}
+	if newState2.LastOffset <= 0 {
+		t.Errorf("expected positive LastOffset after successful parse, got %d", newState2.LastOffset)
+	}
+}

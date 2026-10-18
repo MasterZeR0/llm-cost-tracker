@@ -13,8 +13,8 @@ type Reader struct {
 }
 
 func Open(path string) (*Reader, error) {
-	// Open in immutable read-only mode so editor processes are not locked.
-	dsn := fmt.Sprintf("file:%s?mode=ro&immutable=1", url.PathEscape(path))
+	// Open in read-only mode with busy timeout so concurrent WAL writes succeed.
+	dsn := fmt.Sprintf("file:%s?mode=ro&_busy_timeout=5000", url.PathEscape(path))
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open vscdb: %w", err)

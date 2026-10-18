@@ -134,9 +134,9 @@ func (p *WindsurfParser) parseJSON(source DataSource, state store.SyncState) ([]
 		if errSlice := json.Unmarshal(data, &steps); errSlice == nil {
 			session.Steps = steps
 		} else {
-			// Non-JSON or unsupported format, safe return
-			state.LastOffset = fi.Size()
-			return nil, state, nil
+			// Incomplete or malformed JSON (e.g. active write in progress)
+			// Do not advance LastOffset so the file can be retried on the next poll.
+			return nil, state, fmt.Errorf("unmarshal cascade session %s: %w", source.Path, err)
 		}
 	}
 
@@ -341,9 +341,6 @@ func buildWindsurfRequest(sourcePath, sessionID, defaultModel string, stepIdx in
 		cost, ok := pricingEngine.CalculateCost(model, inTokens, outTokens, 0, 0)
 		if ok {
 			costUSD = cost
-		} else {
-			zeroCost := 0.0
-			costUSD = &zeroCost
 		}
 	}
 

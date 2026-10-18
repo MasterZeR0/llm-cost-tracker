@@ -55,7 +55,7 @@ func SyncAll(cfg *config.Config, st *store.Store, engine *pricing.Engine) (int, 
 			// If tool did not supply cost, calculate it using pricing engine
 			if engine != nil {
 				for i := range reqs {
-					if reqs[i].CostUSD == nil {
+					if reqs[i].CostUSD == nil || (reqs[i].CostUSD != nil && *reqs[i].CostUSD == 0.0) {
 						cost, ok := engine.CalculateCost(
 							reqs[i].Model,
 							reqs[i].InputTokens,

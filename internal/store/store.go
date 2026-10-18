@@ -175,7 +175,7 @@ func (s *Store) insertRequestsInternal(reqs []Request, saveTools bool) (int, err
 			inserted++
 		}
 
-		if saveTools && len(r.ToolCalls) > 0 {
+		if rows > 0 && saveTools && len(r.ToolCalls) > 0 {
 			for _, tc := range r.ToolCalls {
 				tcTime := tc.CreatedAt
 				if tcTime.IsZero() {

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers/tokenestimator"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
@@ -326,7 +325,7 @@ func extractAssistantContentAndTools(contentRaw json.RawMessage, reqID, sessionI
 						toolName = "tool_use"
 					}
 					toolCalls = append(toolCalls, store.ToolCall{
-						ID:        uuid.New().String(),
+						ID:        fmt.Sprintf("%s:tool:%d", reqID, len(toolCalls)),
 						RequestID: reqID,
 						SessionID: sessionID,
 						ToolName:  toolName,
@@ -346,7 +345,7 @@ func extractAssistantContentAndTools(contentRaw json.RawMessage, reqID, sessionI
 		if len(m) > 1 {
 			toolName := m[1]
 			toolCalls = append(toolCalls, store.ToolCall{
-				ID:        uuid.New().String(),
+				ID:        fmt.Sprintf("%s:tool:%d", reqID, len(toolCalls)),
 				RequestID: reqID,
 				SessionID: sessionID,
 				ToolName:  toolName,
