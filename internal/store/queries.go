@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
 )
 
 
@@ -96,21 +98,65 @@ func (s *Store) GetOverview(period string) (*OverviewStats, error) {
 	return &stats, nil
 }
 
+func (s *Store) getPricingEngine() *pricing.Engine {
+	customPrices := make(map[string]pricing.ModelPrice)
+	rows, err := s.db.Query(`SELECT model_pattern, input_per_mtok, output_per_mtok, cache_read_per_mtok, cache_write_per_mtok FROM pricing`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var pat string
+			var p pricing.ModelPrice
+			if err := rows.Scan(&pat, &p.InputPerMTok, &p.OutputPerMTok, &p.CacheReadPerMTok, &p.CacheWritePerMTok); err == nil {
+				customPrices[pat] = p
+			}
+		}
+	}
+	return pricing.NewEngine(customPrices)
+}
+
 func (s *Store) calculateCacheSavings(whereClause string) (float64, error) {
 	rClause := whereClause
 	if rClause != "" {
 		rClause = strings.Replace(rClause, "WHERE timestamp", "WHERE r.timestamp", 1)
 	}
 	query := fmt.Sprintf(`
-		SELECT coalesce(sum(r.cache_read_tokens * max(0.0000005, (coalesce(p.input_per_mtok, 1.25) - coalesce(p.cache_read_per_mtok, 0.30)) / 1000000.0)), 0.0)
+		SELECT coalesce(r.model, ''), coalesce(sum(r.cache_read_tokens), 0)
 		FROM requests r
-		LEFT JOIN pricing p ON r.model = p.model_pattern
 		%s
+		GROUP BY r.model
 	`, rClause)
 
-	var savings float64
-	err := s.db.QueryRow(query).Scan(&savings)
-	return savings, err
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	engine := s.getPricingEngine()
+	var totalSavings float64
+	for rows.Next() {
+		var model string
+		var cacheTokens int64
+		if err := rows.Scan(&model, &cacheTokens); err != nil {
+			return 0, err
+		}
+		if cacheTokens <= 0 {
+			continue
+		}
+
+		costIfInput, ok1 := engine.CalculateCost(model, cacheTokens, 0, 0, 0)
+		costIfCache, ok2 := engine.CalculateCost(model, 0, 0, cacheTokens, 0)
+		if ok1 && ok2 && costIfInput != nil && costIfCache != nil {
+			savings := *costIfInput - *costIfCache
+			if savings > 0 {
+				totalSavings += savings
+			}
+		} else {
+			// Fallback: (1.25 - 0.30) / 1,000,000.0
+			totalSavings += float64(cacheTokens) * (1.25 - 0.30) / 1000000.0
+		}
+	}
+	return totalSavings, rows.Err()
 }
 
 
@@ -303,7 +349,7 @@ func (s *Store) GetCacheStats(period string) (*CacheStats, error) {
 
 func (s *Store) GetSessionSummaries(period string, limit int) ([]SessionSummary, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = 20
 	}
 	clause := periodClause(period)
 	where := clause
@@ -393,12 +439,21 @@ func (s *Store) GetSessionSummaries(period string, limit int) ([]SessionSummary,
 }
 
 func (s *Store) GetSessionDetail(sessionID string) (*SessionDetail, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil, sql.ErrNoRows
+	}
+
+	escapedID := strings.ReplaceAll(sessionID, "\\", "\\\\")
+	escapedID = strings.ReplaceAll(escapedID, "%", "\\%")
+	escapedID = strings.ReplaceAll(escapedID, "_", "\\_")
+
 	var fullSessionID string
 	if err := s.db.QueryRow(`
 		SELECT session_id FROM requests
-		WHERE session_id = ? OR session_id LIKE ? || '%'
+		WHERE session_id = ? OR session_id LIKE ? || '%' ESCAPE '\'
 		LIMIT 1
-	`, sessionID, sessionID).Scan(&fullSessionID); err != nil {
+	`, sessionID, escapedID).Scan(&fullSessionID); err != nil {
 		return nil, err
 	}
 	sessionID = fullSessionID

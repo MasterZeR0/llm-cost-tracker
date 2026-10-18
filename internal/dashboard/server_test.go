@@ -342,5 +342,36 @@ func TestDashboardAPI_AnalyticsAndSessions(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing id, got %d", w.Code)
 	}
+
+	// 7. Non-existent session returns 404 JSON (BUG-02)
+	req = httptest.NewRequest("GET", "/api/sessions/detail?id=does-not-exist", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for nonexistent id, got %d", w.Code)
+	}
+	var errResp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("expected JSON response for 404, got error: %v", err)
+	}
+	if errResp["error"] != "session not found" {
+		t.Fatalf("expected 'session not found', got %q", errResp["error"])
+	}
+
+	// 8. Non-existent session via path returns 404 JSON (BUG-02)
+	req = httptest.NewRequest("GET", "/api/sessions/does-not-exist", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for nonexistent path id, got %d", w.Code)
+	}
+
+	// 9. Wildcard % does not match all sessions (BUG-03)
+	req = httptest.NewRequest("GET", "/api/sessions/detail?id=%25", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for wildcard '%%' session id, got %d", w.Code)
+	}
 }
 

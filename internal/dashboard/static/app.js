@@ -1,7 +1,30 @@
 let charts = {};
 
+function escapeHTML(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function fetchJSON(url) {
   const res = await fetch(url);
+  if (!res.ok) {
+    let errMessage = `HTTP ${res.status}`;
+    try {
+      const errObj = await res.json();
+      if (errObj && errObj.error) errMessage = errObj.error;
+    } catch (_) {
+      try {
+        const text = await res.text();
+        if (text) errMessage = text.trim();
+      } catch (_) {}
+    }
+    throw new Error(errMessage);
+  }
   return res.json();
 }
 
@@ -14,12 +37,17 @@ function formatTokens(num) {
 
 function formatDuration(sec) {
   if (!sec || sec < 0) return '0s';
+  if (sec > 0 && sec < 1) return '<1s';
   if (sec < 60) return Math.round(sec) + 's';
   const m = Math.floor(sec / 60);
   const s = Math.round(sec % 60);
-  if (m < 60) return `${m}m ${s}s`;
+  if (m < 60) return s === 0 ? `${m}m` : `${m}m ${s}s`;
   const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
+  const remM = m % 60;
+  if (h < 24) return remM === 0 ? `${h}h` : `${h}h ${remM}m`;
+  const d = Math.floor(h / 24);
+  const remH = h % 24;
+  return remH === 0 ? `${d}d` : `${d}d ${remH}h`;
 }
 
 async function loadDashboard() {
@@ -183,7 +211,8 @@ async function loadSessions(period) {
 
   sessions.forEach(s => {
     const tr = document.createElement('tr');
-    const sidDisplay = s.session_id.length > 14 ? s.session_id.substring(0, 12) + '…' : s.session_id;
+    const sid = s.session_id || '';
+    const sidDisplay = sid.length > 14 ? sid.substring(0, 12) + '…' : sid;
     const duration = formatDuration(s.duration_seconds);
     const cacheRate = (s.cache_hit_rate || 0).toFixed(1) + '%';
     const cost = '$' + (s.total_cost || 0).toFixed(4);
@@ -193,15 +222,19 @@ async function loadSessions(period) {
     }
 
     tr.innerHTML = `
-      <td><code title="${s.session_id}">${sidDisplay}</code></td>
-      <td>${s.tool || '—'}</td>
+      <td><code title="${escapeHTML(sid)}">${escapeHTML(sidDisplay)}</code></td>
+      <td>${escapeHTML(s.tool || '—')}</td>
       <td>${s.turn_count || 0}</td>
-      <td>${duration}</td>
+      <td>${escapeHTML(duration)}</td>
       <td>${cacheRate}</td>
       <td>${cost}</td>
       <td>${tools}</td>
-      <td><button class="btn btn-sm" onclick="showSessionDetail('${encodeURIComponent(s.session_id)}')">Drilldown</button></td>
+      <td><button class="btn btn-sm btn-drilldown">Drilldown</button></td>
     `;
+    const btn = tr.querySelector('.btn-drilldown');
+    if (btn) {
+      btn.addEventListener('click', () => showSessionDetail(sid));
+    }
     tbody.appendChild(tr);
   });
 }
@@ -217,8 +250,8 @@ async function loadRequests(period) {
     const latency = r.latency_ms ? (r.latency_ms / 1000).toFixed(2) + 's' : '—';
     tr.innerHTML = `
       <td>${new Date(r.timestamp).toLocaleTimeString()}</td>
-      <td>${r.tool}</td>
-      <td>${r.model || '—'}</td>
+      <td>${escapeHTML(r.tool)}</td>
+      <td>${escapeHTML(r.model || '—')}</td>
       <td>${(r.input_tokens || 0).toLocaleString()}</td>
       <td>${(r.output_tokens || 0).toLocaleString()}</td>
       <td>${cost}</td>
@@ -233,7 +266,7 @@ async function showSessionDetail(rawSessionId) {
   const modal = document.getElementById('session-modal');
   modal.style.display = 'flex';
 
-  document.getElementById('modal-title').innerText = `Session: ${sessionId}`;
+  document.getElementById('modal-title').textContent = `Session: ${sessionId}`;
   const summaryEl = document.getElementById('modal-summary');
   summaryEl.innerHTML = '<div style="color: #8b949e">Loading session details...</div>';
   const turnsEl = document.getElementById('modal-turns-table');
@@ -246,7 +279,7 @@ async function showSessionDetail(rawSessionId) {
     summaryEl.innerHTML = `
       <div class="summary-item">
         <span>Tool</span>
-        <strong>${sm.tool || '—'}</strong>
+        <strong>${escapeHTML(sm.tool || '—')}</strong>
       </div>
       <div class="summary-item">
         <span>Turns</span>
@@ -254,7 +287,7 @@ async function showSessionDetail(rawSessionId) {
       </div>
       <div class="summary-item">
         <span>Duration</span>
-        <strong>${formatDuration(sm.duration_seconds)}</strong>
+        <strong>${escapeHTML(formatDuration(sm.duration_seconds))}</strong>
       </div>
       <div class="summary-item">
         <span>Total Tokens</span>
@@ -291,7 +324,9 @@ async function showSessionDetail(rawSessionId) {
       if (t.tool_calls && t.tool_calls.length > 0) {
         toolHtml = t.tool_calls.map(tc => {
           const cls = tc.status === 'error' ? 'tag-error' : 'tag-ok';
-          return `<span class="tool-tag ${cls}" title="${tc.tool_name} (${tc.status})">${tc.tool_name}</span>`;
+          const name = escapeHTML(tc.tool_name);
+          const status = escapeHTML(tc.status);
+          return `<span class="tool-tag ${cls}" title="${name} (${status})">${name}</span>`;
         }).join('');
       } else if (t.tool_call_count > 0) {
         toolHtml = `${t.tool_call_count} call(s)`;
@@ -300,7 +335,7 @@ async function showSessionDetail(rawSessionId) {
       tr.innerHTML = `
         <td>${stepNum}</td>
         <td>${timeStr}</td>
-        <td>${t.model || '—'}</td>
+        <td>${escapeHTML(t.model || '—')}</td>
         <td>${formatTokens(t.input_tokens)}</td>
         <td>${formatTokens(t.cache_read_tokens)}</td>
         <td>${formatTokens(t.output_tokens)}</td>
@@ -311,7 +346,7 @@ async function showSessionDetail(rawSessionId) {
       turnsEl.appendChild(tr);
     });
   } catch (err) {
-    summaryEl.innerHTML = `<div style="color: #f85149">Failed to load details: ${err.message}</div>`;
+    summaryEl.innerHTML = `<div style="color: #f85149">Failed to load details: ${escapeHTML(err.message)}</div>`;
   }
 }
 

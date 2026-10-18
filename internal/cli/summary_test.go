@@ -118,6 +118,18 @@ func TestRenderSummary_WithBreakdown(t *testing.T) {
 	if !bytes.Contains([]byte(out), []byte("claude-3-7-sonnet")) || !bytes.Contains([]byte(out), []byte("gpt-4o")) {
 		t.Fatalf("expected model names: %s", out)
 	}
+
+	// Verify all box lines are exactly 63 runes wide
+	lines := bytes.Split(buf.Bytes(), []byte("\n"))
+	for i, l := range lines {
+		if len(l) == 0 {
+			continue
+		}
+		runes := []rune(string(l))
+		if len(runes) != 63 {
+			t.Errorf("summary line %d has unexpected rune width %d (expected 63): %s", i, len(runes), string(l))
+		}
+	}
 }
 
 func TestRenderSummary_InvalidPeriod(t *testing.T) {

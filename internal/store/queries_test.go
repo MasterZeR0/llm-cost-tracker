@@ -409,5 +409,68 @@ func TestStore_AnalyticsQueries(t *testing.T) {
 	if toolMap["invoke_subagent"].TotalCalls != 1 || toolMap["invoke_subagent"].ErrorCount != 0 {
 		t.Errorf("unexpected stat for invoke_subagent: %+v", toolMap["invoke_subagent"])
 	}
+
+	// 8. Test BUG-01: Seeded pricing table and accurate cache savings
+	var pricingCount int
+	if err := st.DB().QueryRow("SELECT count(*) FROM pricing").Scan(&pricingCount); err != nil {
+		t.Fatalf("failed to query pricing table: %v", err)
+	}
+	if pricingCount == 0 {
+		t.Fatal("expected pricing table to be seeded with default prices, but it is empty")
+	}
+
+	// Ingest known models and test cache savings accuracy
+	savingsReqs := []store.Request{
+		{
+			ID: "sav-1", Tool: "claude_code", SessionID: "sav-sess", Timestamp: now,
+			Model: "claude-opus-4-6", CacheReadTokens: 1_000_000, TotalTokens: 1_000_000,
+		},
+		{
+			ID: "sav-2", Tool: "claude_code", SessionID: "sav-sess", Timestamp: now,
+			Model: "claude-3-5-haiku", CacheReadTokens: 1_000_000, TotalTokens: 1_000_000,
+		},
+	}
+	if _, err := st.InsertRequests(savingsReqs); err != nil {
+		t.Fatal(err)
+	}
+	cacheStats, err = st.GetCacheStats("today")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Opus 4.6 savings: (5.00 - 0.50) = 4.50. Haiku savings: (0.80 - 0.08) = 0.72.
+	// Expected total savings: 4.50 + 0.72 = 5.22
+	expectedSavings := 4.50 + 0.72
+	if cacheStats.SavingsUSD < expectedSavings-0.05 || cacheStats.SavingsUSD > expectedSavings+0.05 {
+		t.Errorf("expected cache savings ~$%.2f, got $%.2f", expectedSavings, cacheStats.SavingsUSD)
+	}
+
+	// 9. Test BUG-03: Empty and wildcard session ID rejection
+	if _, err := st.GetSessionDetail(""); err == nil {
+		t.Error("expected error for empty session ID in GetSessionDetail, got nil")
+	}
+	if _, err := st.GetSessionDetail("   "); err == nil {
+		t.Error("expected error for whitespace session ID in GetSessionDetail, got nil")
+	}
+	if _, err := st.GetSessionDetail("%"); err == nil {
+		t.Error("expected error for '%' wildcard session ID, got nil")
+	}
+	if _, err := st.GetSessionDetail("_"); err == nil {
+		t.Error("expected error for '_' wildcard session ID, got nil")
+	}
+
+	// 10. Test BUG-06: Indexes and Foreign Keys
+	var fkCheck int
+	if err := st.DB().QueryRow("PRAGMA foreign_keys").Scan(&fkCheck); err != nil || fkCheck != 1 {
+		t.Errorf("expected PRAGMA foreign_keys=1, got %d (err: %v)", fkCheck, err)
+	}
+
+	// Verify indexes exist
+	for _, idx := range []string{"idx_requests_session", "idx_tool_calls_request"} {
+		var idxExists int
+		_ = st.DB().QueryRow("SELECT count(*) FROM sqlite_master WHERE type='index' AND name=?", idx).Scan(&idxExists)
+		if idxExists == 0 {
+			t.Errorf("expected index %s to exist in database", idx)
+		}
+	}
 }
 

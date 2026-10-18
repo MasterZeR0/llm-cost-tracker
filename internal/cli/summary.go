@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/nehaverma/llm-cost-tracker/internal/store"
 	"github.com/spf13/cobra"
@@ -31,6 +32,18 @@ func init() {
 	summaryCmd.Flags().StringVar(&periodFlag, "period", "today", "period to display: today, week, month, all")
 }
 
+func renderBoxLine(w io.Writer, content string, innerWidth int) {
+	runes := []rune(content)
+	if len(runes) > innerWidth {
+		runes = runes[:innerWidth]
+	}
+	padding := innerWidth - len(runes)
+	if padding < 0 {
+		padding = 0
+	}
+	fmt.Fprintf(w, "│%s%s│\n", string(runes), strings.Repeat(" ", padding))
+}
+
 func RenderSummary(w io.Writer, s *store.Store, period string) error {
 	switch period {
 	case "today", "week", "month", "all":
@@ -47,55 +60,66 @@ func RenderSummary(w io.Writer, s *store.Store, period string) error {
 	modelCost, _ := s.GetCostByModel(period)
 	toolCallStats, _ := s.GetToolCallStats(period)
 
+	const innerWidth = 61
 	fmt.Fprintln(w, "╭─────────────────────────────────────────────────────────────╮")
-	fmt.Fprintf(w, "│                   LLM Cost Tracker — %-22s │\n", period)
+	renderBoxLine(w, fmt.Sprintf("                   LLM Cost Tracker — %s", period), innerWidth)
 	fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────┤")
-	fmt.Fprintf(w, "│  Total Sessions:    %-39d │\n", stats.TotalSessions)
+	renderBoxLine(w, fmt.Sprintf("  Total Sessions:    %-39d", stats.TotalSessions), innerWidth)
 	turnsStr := fmt.Sprintf("%d (avg %.1f / session)", stats.TotalRequests, stats.AvgTurnsPerSession)
-	fmt.Fprintf(w, "│  Total Turns:       %-39s │\n", turnsStr)
-	fmt.Fprintf(w, "│  Total Tokens:      %-39d │\n", stats.TotalTokens)
+	renderBoxLine(w, fmt.Sprintf("  Total Turns:       %-39s", turnsStr), innerWidth)
+	renderBoxLine(w, fmt.Sprintf("  Total Tokens:      %-39d", stats.TotalTokens), innerWidth)
 	cacheStr := fmt.Sprintf("%.1f%% ($%.2f saved)", stats.CacheHitRate, stats.CacheSavingsUSD)
-	fmt.Fprintf(w, "│  Cache Hit Rate:    %-39s │\n", cacheStr)
-	fmt.Fprintf(w, "│  Total Cost:        $%-38.2f │\n", stats.TotalCost)
+	renderBoxLine(w, fmt.Sprintf("  Cache Hit Rate:    %-39s", cacheStr), innerWidth)
+	renderBoxLine(w, fmt.Sprintf("  Total Cost:        $%-38.2f", stats.TotalCost), innerWidth)
 	latStr := fmt.Sprintf("%.2fs", stats.AvgLatencyMS/1000.0)
-	fmt.Fprintf(w, "│  Avg Latency:       %-39s │\n", latStr)
+	renderBoxLine(w, fmt.Sprintf("  Avg Latency:       %-39s", latStr), innerWidth)
 
 	if len(toolCallStats) > 0 {
 		fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────┤")
-		fmt.Fprintln(w, "│  Top Agentic Tools:                                         │")
+		renderBoxLine(w, "  Top Agentic Tools:", innerWidth)
 		limit := len(toolCallStats)
 		if limit > 4 {
 			limit = 4
 		}
 		for i := 0; i < limit; i++ {
 			tc := toolCallStats[i]
+			toolName := tc.ToolName
+			if len([]rune(toolName)) > 18 {
+				toolName = string([]rune(toolName)[:15]) + "..."
+			}
 			errPart := ""
 			if tc.ErrorCount > 0 {
 				errPart = fmt.Sprintf(" (%d errors)", tc.ErrorCount)
 			}
 			callInfo := fmt.Sprintf("%d calls%s", tc.TotalCalls, errPart)
-			fmt.Fprintf(w, "│    %-18s %-36s │\n", tc.ToolName, callInfo)
+			renderBoxLine(w, fmt.Sprintf("    %-18s %s", toolName, callInfo), innerWidth)
 		}
 	}
 
 	if len(toolUsage) > 0 {
 		fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────┤")
-		fmt.Fprintln(w, "│  By Tool:                                                   │")
+		renderBoxLine(w, "  By Tool:", innerWidth)
 		for _, tu := range toolUsage {
-			fmt.Fprintf(w, "│    %-12s %3d turns    $%-23.2f │\n", tu.Tool, tu.RequestCount, tu.TotalCost)
+			toolName := tu.Tool
+			if len([]rune(toolName)) > 14 {
+				toolName = string([]rune(toolName)[:11]) + "..."
+			}
+			renderBoxLine(w, fmt.Sprintf("    %-14s %5d turns    $%10.2f", toolName, tu.RequestCount, tu.TotalCost), innerWidth)
 		}
 	}
 
-
 	if len(modelCost) > 0 {
 		fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────┤")
-		fmt.Fprintln(w, "│  By Model:                                                  │")
+		renderBoxLine(w, "  By Model:", innerWidth)
 		for _, mc := range modelCost {
-			fmt.Fprintf(w, "│    %-16s %3d turns   $%-23.2f │\n", mc.Model, mc.RequestCount, mc.Cost)
+			modelName := mc.Model
+			if len([]rune(modelName)) > 22 {
+				modelName = string([]rune(modelName)[:19]) + "..."
+			}
+			renderBoxLine(w, fmt.Sprintf("    %-22s %5d turns    $%10.2f", modelName, mc.RequestCount, mc.Cost), innerWidth)
 		}
 	}
 
 	fmt.Fprintln(w, "╰─────────────────────────────────────────────────────────────╯")
 	return nil
-
 }

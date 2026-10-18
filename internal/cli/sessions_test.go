@@ -83,6 +83,37 @@ func TestRenderSessionsList_And_Detail(t *testing.T) {
 	if err := cli.RenderSessionDetail(&missingBuf, st, "non-existent-session"); err == nil {
 		t.Error("expected error for non-existent session, got nil")
 	}
+
+	// 4. Test empty session ID returns error (BUG-03)
+	var emptyBuf bytes.Buffer
+	if err := cli.RenderSessionDetail(&emptyBuf, st, ""); err == nil {
+		t.Error("expected error for empty session ID, got nil")
+	}
+	if err := cli.RenderSessionDetail(&emptyBuf, st, "   "); err == nil {
+		t.Error("expected error for whitespace session ID, got nil")
+	}
+
+	// 5. Test limit <= 0 returns error (BUG-10)
+	var limitBuf bytes.Buffer
+	if err := cli.RenderSessionsList(&limitBuf, st, "all", 0); err == nil {
+		t.Error("expected error for limit=0, got nil")
+	}
+	if err := cli.RenderSessionsList(&limitBuf, st, "all", -5); err == nil {
+		t.Error("expected error for negative limit, got nil")
+	}
+
+	// 6. Test box border alignment for sessions list
+	lines := bytes.Split(listBuf.Bytes(), []byte("\n"))
+	for i, l := range lines {
+		if len(l) == 0 {
+			continue
+		}
+		// Every border line starts with ╭, ├, ╰, or │ and ends with ╮, ┤, ╯, or │
+		runes := []rune(string(l))
+		if len(runes) != 95 {
+			t.Errorf("line %d has unexpected rune width %d (expected 95): %s", i, len(runes), string(l))
+		}
+	}
 }
 
 func TestRenderSessionsList_Empty(t *testing.T) {
@@ -102,3 +133,4 @@ func TestRenderSessionsList_Empty(t *testing.T) {
 		t.Errorf("expected empty notice: %s", out)
 	}
 }
+

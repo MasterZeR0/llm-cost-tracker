@@ -22,14 +22,21 @@ var sessionsCmd = &cobra.Command{
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		switch sessionsPeriodFlag {
 		case "today", "week", "month", "all":
-			return nil
 		default:
 			return fmt.Errorf("invalid period %q: must be one of today, week, month, all", sessionsPeriodFlag)
 		}
+		if sessionsLimitFlag <= 0 {
+			return fmt.Errorf("limit must be greater than 0, got %d", sessionsLimitFlag)
+		}
+		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
-			return RenderSessionDetail(os.Stdout, st, args[0])
+			sessionID := strings.TrimSpace(args[0])
+			if sessionID == "" {
+				return fmt.Errorf("session ID cannot be empty")
+			}
+			return RenderSessionDetail(os.Stdout, st, sessionID)
 		}
 		return RenderSessionsList(os.Stdout, st, sessionsPeriodFlag, sessionsLimitFlag)
 	},
@@ -44,6 +51,9 @@ func formatDuration(sec float64) string {
 	if sec <= 0 {
 		return "0s"
 	}
+	if sec < 1.0 {
+		return "<1s"
+	}
 	d := time.Duration(sec * float64(time.Second))
 	if d < time.Minute {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
@@ -56,12 +66,20 @@ func formatDuration(sec float64) string {
 		}
 		return fmt.Sprintf("%dm %ds", m, s)
 	}
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if m == 0 {
-		return fmt.Sprintf("%dh", h)
+	if d < 24*time.Hour {
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		if m == 0 {
+			return fmt.Sprintf("%dh", h)
+		}
+		return fmt.Sprintf("%dh %dm", h, m)
 	}
-	return fmt.Sprintf("%dh %dm", h, m)
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	if hours == 0 {
+		return fmt.Sprintf("%dd", days)
+	}
+	return fmt.Sprintf("%dd %dh", days, hours)
 }
 
 func RenderSessionsList(w io.Writer, s *store.Store, period string, limit int) error {
@@ -70,26 +88,34 @@ func RenderSessionsList(w io.Writer, s *store.Store, period string, limit int) e
 	default:
 		return fmt.Errorf("invalid period %q: must be one of today, week, month, all", period)
 	}
+	if limit <= 0 {
+		return fmt.Errorf("limit must be greater than 0, got %d", limit)
+	}
 
 	summaries, err := s.GetSessionSummaries(period, limit)
 	if err != nil {
 		return err
 	}
 
+	const innerWidth = 93
 	fmt.Fprintln(w, "╭─────────────────────────────────────────────────────────────────────────────────────────────╮")
-	fmt.Fprintf(w, "│                                 Recent Sessions — %-18s                │\n", period)
+	renderBoxLine(w, fmt.Sprintf("                                 Recent Sessions — %s", period), innerWidth)
 	fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────────────────────────────────────┤")
-	fmt.Fprintf(w, "│ %-18s %-12s %-6s %-10s %-9s %-9s %-9s %-13s │\n",
-		"SESSION ID", "TOOL", "TURNS", "DURATION", "TOKENS", "CACHE %", "COST", "TOOLS (ERR)")
+	renderBoxLine(w, fmt.Sprintf(" %-18s %-12s %-6s %-10s %-8s %-8s %-9s %-14s",
+		"SESSION ID", "TOOL", "TURNS", "DURATION", "TOKENS", "CACHE %", "COST", "TOOLS (ERR)"), innerWidth)
 	fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────────────────────────────────────┤")
 
 	if len(summaries) == 0 {
-		fmt.Fprintln(w, "│ (no sessions recorded for this period)                                                      │")
+		renderBoxLine(w, " (no sessions recorded for this period)", innerWidth)
 	} else {
 		for _, sm := range summaries {
 			displayID := sm.SessionID
-			if len(displayID) > 18 {
-				displayID = displayID[:18]
+			if len([]rune(displayID)) > 18 {
+				displayID = string([]rune(displayID)[:15]) + "..."
+			}
+			toolStr := sm.Tool
+			if len([]rune(toolStr)) > 12 {
+				toolStr = string([]rune(toolStr)[:9]) + "..."
 			}
 			durStr := formatDuration(sm.DurationSeconds)
 			toolInfo := fmt.Sprintf("%d", sm.ToolCallCount)
@@ -99,8 +125,8 @@ func RenderSessionsList(w io.Writer, s *store.Store, period string, limit int) e
 			cacheStr := fmt.Sprintf("%.1f%%", sm.CacheHitRate)
 			costStr := fmt.Sprintf("$%.2f", sm.TotalCost)
 
-			fmt.Fprintf(w, "│ %-18s %-12s %-6d %-10s %-9d %-9s %-9s %-13s │\n",
-				displayID, sm.Tool, sm.TurnCount, durStr, sm.TotalTokens, cacheStr, costStr, toolInfo)
+			renderBoxLine(w, fmt.Sprintf(" %-18s %-12s %-6d %-10s %-8d %-8s %-9s %-14s",
+				displayID, toolStr, sm.TurnCount, durStr, sm.TotalTokens, cacheStr, costStr, toolInfo), innerWidth)
 		}
 	}
 
@@ -109,26 +135,49 @@ func RenderSessionsList(w io.Writer, s *store.Store, period string, limit int) e
 }
 
 func RenderSessionDetail(w io.Writer, s *store.Store, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return fmt.Errorf("session ID cannot be empty")
+	}
+
 	detail, err := s.GetSessionDetail(sessionID)
 	if err != nil {
-		return fmt.Errorf("session %q not found: %w", sessionID, err)
+		return fmt.Errorf("session %q not found", sessionID)
 	}
 
 	sm := detail.Summary
 	durStr := formatDuration(sm.DurationSeconds)
 
+	const innerWidth = 93
 	fmt.Fprintln(w, "╭─────────────────────────────────────────────────────────────────────────────────────────────╮")
-	fmt.Fprintf(w, "│ Session Detail: %-75s │\n", sm.SessionID)
+	renderBoxLine(w, fmt.Sprintf(" Session Detail: %s", sm.SessionID), innerWidth)
 	fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────────────────────────────────────┤")
-	fmt.Fprintf(w, "│ Tool: %-12s | Turns: %-4d | Duration: %-8s | Cost: $%-7.2f                          │\n",
-		sm.Tool, sm.TurnCount, durStr, sm.TotalCost)
-	fmt.Fprintf(w, "│ Tokens: %-9d (Cache: %-7d Hit, %-7d Miss, %4.1f%%) | Tools: %-3d (%d err)          │\n",
-		sm.TotalTokens, sm.CacheHitTokens, sm.CacheMissTokens, sm.CacheHitRate, sm.ToolCallCount, sm.ToolErrorCount)
+	renderBoxLine(w, fmt.Sprintf(" Tool: %-12s | Turns: %-4d | Duration: %-8s | Cost: $%.2f",
+		sm.Tool, sm.TurnCount, durStr, sm.TotalCost), innerWidth)
+	errPart := ""
+	if sm.ToolErrorCount > 0 {
+		errPart = fmt.Sprintf(" (%d err)", sm.ToolErrorCount)
+	}
+	renderBoxLine(w, fmt.Sprintf(" Tokens: %-9d (Cache: %d Hit, %d Miss, %.1f%%) | Tools: %d%s",
+		sm.TotalTokens, sm.CacheHitTokens, sm.CacheMissTokens, sm.CacheHitRate, sm.ToolCallCount, errPart), innerWidth)
 	fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────────────────────────────────────┤")
-	fmt.Fprintf(w, "│ %-5s %-18s %-20s %-8s %-34s │\n", "STEP", "MODEL", "TOKENS (H/M/O)", "COST", "TOOLS")
+	renderBoxLine(w, fmt.Sprintf(" %-5s %-20s %-20s %-8s %-34s", "STEP", "MODEL", "TOKENS (H/M/O)", "COST", "TOOLS"), innerWidth)
 	fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────────────────────────────────────┤")
 
-	for _, turn := range detail.Turns {
+	allZero := true
+	for _, t := range detail.Turns {
+		if t.StepIndex != 0 {
+			allZero = false
+			break
+		}
+	}
+
+	for i, turn := range detail.Turns {
+		stepNum := turn.StepIndex
+		if allZero || stepNum == 0 {
+			stepNum = int64(i + 1)
+		}
+
 		tokStr := fmt.Sprintf("%d/%d/%d", turn.CacheReadTokens, turn.InputTokens, turn.OutputTokens)
 		costStr := "$0.00"
 		if turn.CostUSD != nil {
@@ -144,17 +193,17 @@ func RenderSessionDetail(w io.Writer, s *store.Store, sessionID string) error {
 			toolNames = append(toolNames, name)
 		}
 		toolsStr := strings.Join(toolNames, ", ")
-		if len(toolsStr) > 34 {
-			toolsStr = toolsStr[:31] + "..."
+		if len([]rune(toolsStr)) > 34 {
+			toolsStr = string([]rune(toolsStr)[:31]) + "..."
 		}
 
 		modelStr := turn.Model
-		if len(modelStr) > 18 {
-			modelStr = modelStr[:18]
+		if len([]rune(modelStr)) > 20 {
+			modelStr = string([]rune(modelStr)[:17]) + "..."
 		}
 
-		fmt.Fprintf(w, "│ %-5d %-18s %-20s %-8s %-34s │\n",
-			turn.StepIndex, modelStr, tokStr, costStr, toolsStr)
+		renderBoxLine(w, fmt.Sprintf(" %-5d %-20s %-20s %-8s %-34s",
+			stepNum, modelStr, tokStr, costStr, toolsStr), innerWidth)
 	}
 
 	fmt.Fprintln(w, "╰─────────────────────────────────────────────────────────────────────────────────────────────╯")

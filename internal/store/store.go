@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
 )
 
 type Store struct {
@@ -19,9 +20,14 @@ func NewStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("failed to create db dir: %w", err)
 	}
 
-	db, err := sql.Open("sqlite3", dbPath+"?_journal=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite3", dbPath+"?_journal=WAL&_busy_timeout=5000&_foreign_keys=1")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
+	}
+
+	if _, err := db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
 
 	if _, err := db.Exec(SchemaSQL); err != nil {
@@ -35,7 +41,36 @@ func NewStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 
+	if err := st.seedPricing(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to seed pricing: %w", err)
+	}
+
 	return st, nil
+}
+
+func (s *Store) seedPricing() error {
+	stmt, err := s.db.Prepare(`
+		INSERT INTO pricing (
+			model_pattern, input_per_mtok, output_per_mtok, cache_read_per_mtok, cache_write_per_mtok, effective_date, source
+		) VALUES (?, ?, ?, ?, ?, '2026-01-01', 'default')
+		ON CONFLICT(model_pattern) DO UPDATE SET
+			input_per_mtok = excluded.input_per_mtok,
+			output_per_mtok = excluded.output_per_mtok,
+			cache_read_per_mtok = excluded.cache_read_per_mtok,
+			cache_write_per_mtok = excluded.cache_write_per_mtok
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for pattern, price := range pricing.DefaultModelPrices {
+		if _, err := stmt.Exec(pattern, price.InputPerMTok, price.OutputPerMTok, price.CacheReadPerMTok, price.CacheWritePerMTok); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) migrate() error {
@@ -55,6 +90,17 @@ func (s *Store) migrate() error {
 			}
 		}
 	}
+
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_requests_session ON requests(session_id);",
+		"CREATE INDEX IF NOT EXISTS idx_tool_calls_request ON tool_calls(request_id);",
+	}
+	for _, idx := range indexes {
+		if _, err := s.db.Exec(idx); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
