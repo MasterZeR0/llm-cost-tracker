@@ -170,3 +170,244 @@ func TestStore_Queries(t *testing.T) {
 		t.Fatalf("expected 2 recent requests this month (r1, r2), got %d", len(recentMonth))
 	}
 }
+
+func TestStore_AnalyticsQueries(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_queries.db")
+
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// 1. Verify zero state doesn't error or divide by zero
+	overview, err := st.GetOverview("all")
+	if err != nil {
+		t.Fatalf("unexpected error on empty store: %v", err)
+	}
+	if overview.TotalSessions != 0 || overview.CacheHitRate != 0.0 || overview.CacheSavingsUSD != 0.0 {
+		t.Fatalf("expected 0 stats on empty store, got %+v", overview)
+	}
+
+	cacheStats, err := st.GetCacheStats("all")
+	if err != nil {
+		t.Fatalf("unexpected error on cache stats: %v", err)
+	}
+	if cacheStats.TotalPrompt != 0 || cacheStats.CacheHitRate != 0.0 || cacheStats.SavingsUSD != 0.0 {
+		t.Fatalf("expected 0 cache stats, got %+v", cacheStats)
+	}
+
+	sessSummaries, err := st.GetSessionSummaries("all", 10)
+	if err != nil {
+		t.Fatalf("unexpected error on session summaries: %v", err)
+	}
+	if len(sessSummaries) != 0 {
+		t.Fatalf("expected 0 sessions, got %d", len(sessSummaries))
+	}
+
+	toolStatsEmpty, err := st.GetToolCallStats("all")
+	if err != nil {
+		t.Fatalf("unexpected error on empty tool stats: %v", err)
+	}
+	if len(toolStatsEmpty) != 0 {
+		t.Fatalf("expected 0 tool stats, got %d", len(toolStatsEmpty))
+	}
+
+	if _, err := st.GetSessionDetail("non-existent"); err == nil {
+		t.Fatal("expected error for non-existent session detail, got nil")
+	}
+
+	// 2. Populate test data: 2 sessions, multiple turns, tool calls
+	sess1 := "sess-alpha"
+	sess2 := "sess-beta"
+	now := time.Now().UTC()
+
+	req1 := store.Request{
+		ID:                "req-1",
+		Tool:              "agy",
+		SessionID:         sess1,
+		Timestamp:         now.Add(-10 * time.Minute),
+		Model:             "gemini-2-pro",
+		InputTokens:       200, // Miss
+		CacheReadTokens:   800, // Hit
+		OutputTokens:      100,
+		TotalTokens:       1100,
+		StepIndex:         0,
+		ToolCallCount:     1,
+		ToolErrorCount:    0,
+		SubagentCallCount: 0,
+		ToolCalls: []store.ToolCall{
+			{ID: "t-1", RequestID: "req-1", SessionID: sess1, ToolName: "view_file", Status: "success", CreatedAt: now.Add(-10 * time.Minute)},
+		},
+	}
+	req2 := store.Request{
+		ID:                "req-2",
+		Tool:              "agy",
+		SessionID:         sess1,
+		Timestamp:         now.Add(-5 * time.Minute),
+		Model:             "gemini-2-pro",
+		InputTokens:       100, // Miss
+		CacheReadTokens:   900, // Hit
+		OutputTokens:      150,
+		TotalTokens:       1150,
+		StepIndex:         1,
+		ToolCallCount:     1,
+		ToolErrorCount:    1,
+		SubagentCallCount: 0,
+		ToolCalls: []store.ToolCall{
+			{ID: "t-2", RequestID: "req-2", SessionID: sess1, ToolName: "run_command", Status: "error", CreatedAt: now.Add(-5 * time.Minute)},
+		},
+	}
+	req3 := store.Request{
+		ID:                "req-3",
+		Tool:              "claude_code",
+		SessionID:         sess2,
+		Timestamp:         now.Add(-2 * time.Minute),
+		Model:             "claude-3-7-sonnet",
+		InputTokens:       500, // Miss
+		CacheReadTokens:   500, // Hit
+		OutputTokens:      200,
+		TotalTokens:       1200,
+		StepIndex:         0,
+		ToolCallCount:     1,
+		ToolErrorCount:    0,
+		SubagentCallCount: 1,
+		ToolCalls: []store.ToolCall{
+			{ID: "t-3", RequestID: "req-3", SessionID: sess2, ToolName: "invoke_subagent", Status: "success", CreatedAt: now.Add(-2 * time.Minute)},
+		},
+	}
+
+	if err := st.InsertRequestsWithTools([]store.Request{req1, req2, req3}); err != nil {
+		t.Fatalf("failed to insert test data: %v", err)
+	}
+
+	// 3. Test GetOverview with data
+	overview, err = st.GetOverview("all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.TotalRequests != 3 || overview.TotalSessions != 2 {
+		t.Errorf("expected 3 requests and 2 sessions, got reqs=%d, sess=%d", overview.TotalRequests, overview.TotalSessions)
+	}
+	if overview.AvgTurnsPerSession < 1.49 || overview.AvgTurnsPerSession > 1.51 {
+		t.Errorf("expected avg turns ~1.5, got %f", overview.AvgTurnsPerSession)
+	}
+	if overview.CacheHitTokens != 2200 || overview.CacheMissTokens != 800 {
+		t.Errorf("expected 2200 hit, 800 miss, got %d hit, %d miss", overview.CacheHitTokens, overview.CacheMissTokens)
+	}
+	// Total prompt = 800 miss + 2200 hit = 3000 total prompt.
+	// Hit rate = 2200 / 3000 = 73.33%
+	if overview.CacheHitRate < 73.0 || overview.CacheHitRate > 74.0 {
+		t.Errorf("expected cache hit rate ~73.33%%, got %f", overview.CacheHitRate)
+	}
+	if overview.CacheSavingsUSD <= 0 {
+		t.Errorf("expected cache savings > 0, got %f", overview.CacheSavingsUSD)
+	}
+	if overview.TotalToolCalls != 3 {
+		t.Errorf("expected 3 tool calls, got %d", overview.TotalToolCalls)
+	}
+	if overview.TotalToolErrors != 1 {
+		t.Errorf("expected 1 tool error, got %d", overview.TotalToolErrors)
+	}
+	if overview.TotalSubagents != 1 {
+		t.Errorf("expected 1 subagent call, got %d", overview.TotalSubagents)
+	}
+
+	// 4. Test GetCacheStats
+	cacheStats, err = st.GetCacheStats("all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cacheStats.CacheHitTokens != 2200 || cacheStats.CacheMissTokens != 800 || cacheStats.OutputTokens != 450 {
+		t.Errorf("unexpected cache stats: %+v", cacheStats)
+	}
+	if cacheStats.TotalPrompt != 3000 {
+		t.Errorf("expected 3000 total prompt, got %d", cacheStats.TotalPrompt)
+	}
+	if cacheStats.CacheHitRate < 73.0 || cacheStats.CacheHitRate > 74.0 {
+		t.Errorf("expected cache hit rate ~73.33%%, got %f", cacheStats.CacheHitRate)
+	}
+	if cacheStats.SavingsUSD <= 0 {
+		t.Errorf("expected savings > 0, got %f", cacheStats.SavingsUSD)
+	}
+
+	// 5. Test GetSessionSummaries
+	summaries, err := st.GetSessionSummaries("all", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 session summaries, got %d", len(summaries))
+	}
+	if summaries[0].SessionID != sess2 { // sess2 had latest timestamp
+		t.Errorf("expected latest session %s first, got %s", sess2, summaries[0].SessionID)
+	}
+	if summaries[1].SessionID == sess1 {
+		if summaries[1].TurnCount != 2 {
+			t.Errorf("expected 2 turns for sess1, got %d", summaries[1].TurnCount)
+		}
+		if summaries[1].DurationSeconds < 299 || summaries[1].DurationSeconds > 301 {
+			t.Errorf("expected ~300s duration for sess1, got %f", summaries[1].DurationSeconds)
+		}
+		if summaries[1].ToolCallCount != 2 {
+			t.Errorf("expected 2 tool calls for sess1, got %d", summaries[1].ToolCallCount)
+		}
+		if summaries[1].ToolErrorCount != 1 {
+			t.Errorf("expected 1 tool error for sess1, got %d", summaries[1].ToolErrorCount)
+		}
+		if summaries[1].CacheHitTokens != 1700 || summaries[1].CacheMissTokens != 300 {
+			t.Errorf("expected 1700 hit, 300 miss for sess1, got %d hit, %d miss", summaries[1].CacheHitTokens, summaries[1].CacheMissTokens)
+		}
+		if summaries[1].CacheHitRate < 84.9 || summaries[1].CacheHitRate > 85.1 {
+			t.Errorf("expected ~85.0%% hit rate for sess1, got %f", summaries[1].CacheHitRate)
+		}
+	}
+
+	// 6. Test GetSessionDetail
+	detail, err := st.GetSessionDetail(sess1)
+	if err != nil {
+		t.Fatalf("unexpected error getting session detail: %v", err)
+	}
+	if detail.Summary.SessionID != sess1 {
+		t.Errorf("expected session ID %s, got %s", sess1, detail.Summary.SessionID)
+	}
+	if detail.Summary.TurnCount != 2 {
+		t.Errorf("expected 2 turns in summary, got %d", detail.Summary.TurnCount)
+	}
+	if len(detail.Turns) != 2 {
+		t.Fatalf("expected 2 turns, got %d", len(detail.Turns))
+	}
+	if detail.Turns[0].ID != "req-1" || detail.Turns[1].ID != "req-2" {
+		t.Errorf("turns not ordered chronologically: [%s, %s]", detail.Turns[0].ID, detail.Turns[1].ID)
+	}
+	if len(detail.Turns[0].ToolCalls) != 1 || detail.Turns[0].ToolCalls[0].ToolName != "view_file" {
+		t.Errorf("unexpected tool calls for turn 0: %+v", detail.Turns[0].ToolCalls)
+	}
+	if len(detail.Turns[1].ToolCalls) != 1 || detail.Turns[1].ToolCalls[0].ToolName != "run_command" || detail.Turns[1].ToolCalls[0].Status != "error" {
+		t.Errorf("unexpected tool calls for turn 1: %+v", detail.Turns[1].ToolCalls)
+	}
+
+	// 7. Test GetToolCallStats
+	toolStats, err := st.GetToolCallStats("all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(toolStats) != 3 {
+		t.Fatalf("expected 3 distinct tools, got %d", len(toolStats))
+	}
+	toolMap := make(map[string]store.ToolCallStat)
+	for _, tc := range toolStats {
+		toolMap[tc.ToolName] = tc
+	}
+	if toolMap["run_command"].TotalCalls != 1 || toolMap["run_command"].ErrorCount != 1 {
+		t.Errorf("unexpected stat for run_command: %+v", toolMap["run_command"])
+	}
+	if toolMap["view_file"].TotalCalls != 1 || toolMap["view_file"].ErrorCount != 0 {
+		t.Errorf("unexpected stat for view_file: %+v", toolMap["view_file"])
+	}
+	if toolMap["invoke_subagent"].TotalCalls != 1 || toolMap["invoke_subagent"].ErrorCount != 0 {
+		t.Errorf("unexpected stat for invoke_subagent: %+v", toolMap["invoke_subagent"])
+	}
+}
+
