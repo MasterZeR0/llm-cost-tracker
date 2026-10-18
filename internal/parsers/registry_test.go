@@ -41,20 +41,25 @@ func TestRegistry(t *testing.T) {
 		t.Fatal("expected non_existent_tool to not be found")
 	}
 
-	all := parsers.All()
-	if len(all) == 0 {
-		t.Fatal("expected at least one parser in All()")
+	expectedTools := []string{
+		"claude_code", "agy", "codex", "aider", "opencode",
+		"cline", "roo_code", "cursor", "windsurf", "copilot_cli",
 	}
 
-	var foundClaudeCode bool
-	for _, parser := range all {
-		if parser.Name() == "claude_code" {
-			foundClaudeCode = true
-			break
+	for _, tool := range expectedTools {
+		p, ok := parsers.Get(tool)
+		if !ok || p == nil {
+			t.Errorf("expected tool %s to be registered", tool)
+			continue
+		}
+		if p.Name() != tool {
+			t.Errorf("expected name %s, got %s", tool, p.Name())
 		}
 	}
-	if !foundClaudeCode {
-		t.Fatal("claude_code not found in All()")
+
+	all := parsers.All()
+	if len(all) < len(expectedTools) {
+		t.Fatalf("expected at least %d parsers in All(), got %d", len(expectedTools), len(all))
 	}
 }
 

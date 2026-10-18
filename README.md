@@ -33,6 +33,11 @@ A fast, lightweight Go daemon and CLI that automatically tracks costs, tokens, l
 | **Codex CLI** | `~/.codex/` | Thread sessions, model providers, token usage, duration |
 | **Aider** | `.aider.analytics.jsonl` | Message turns, completion tokens, prompt tokens, model costs |
 | **OpenCode** | `~/.local/share/opencode/` | Message history, session IDs, model allocations, token splits |
+| **Cline** | `saoudrizwan.claude-dev/tasks/` | Multi-turn task steps, prompt cache read/write, cost, tools (`execute_command`, `write_to_file`) |
+| **Roo Code** | `rooveterinaryinc.roo-cline/tasks/` | Independent task sessions, custom mode tracking, prompt caching, tool error detection |
+| **Cursor** | `Cursor/.../state.vscdb` | Composer & chat history, turn bubbles, hybrid token estimation, tool actions |
+| **Windsurf** | `Windsurf/.../state.vscdb`, `cascade/` | Cascade sessions, multi-step turns, tool calls, latencies, cost calculations |
+| **GitHub Copilot CLI** | `~/.copilot-cli/`, `~/.config/gh/` | Command suggestions, explanation turns, hybrid token estimation, model mapping |
 
 ### Supported Models & Pricing Catalog
 
