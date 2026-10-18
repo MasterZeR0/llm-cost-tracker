@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/nehaverma/llm-cost-tracker/internal/config"
 	"github.com/nehaverma/llm-cost-tracker/internal/parsers"
@@ -85,6 +87,14 @@ func SyncAll(cfg *config.Config, st *store.Store, engine *pricing.Engine) (int, 
 			if err := st.SetSyncState(newState); err != nil {
 				slog.Warn("failed to update sync state", "file", src.Path, "err", err)
 			}
+		}
+	}
+
+	if agyCfg, ok := cfg.Tools["agy"]; ok && agyCfg.Enabled && len(agyCfg.Paths) > 0 {
+		brainPath := config.ExpandHome(agyCfg.Paths[0])
+		convDir := filepath.Join(filepath.Dir(brainPath), "conversations")
+		if _, statErr := os.Stat(convDir); statErr == nil {
+			_, _ = parsers.BackfillAGYLatencies(st.DB(), convDir)
 		}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/nehaverma/llm-cost-tracker/internal/config"
+	"github.com/nehaverma/llm-cost-tracker/internal/parsers"
 	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
 	"github.com/nehaverma/llm-cost-tracker/internal/store"
 	"github.com/spf13/cobra"
@@ -62,4 +63,11 @@ func initConfig() {
 	}
 
 	engine = pricing.NewEngine(nil)
+	if agyCfg, ok := cfg.Tools["agy"]; ok && agyCfg.Enabled && len(agyCfg.Paths) > 0 {
+		brainPath := config.ExpandHome(agyCfg.Paths[0])
+		convDir := filepath.Join(filepath.Dir(brainPath), "conversations")
+		if _, statErr := os.Stat(convDir); statErr == nil {
+			_, _ = parsers.BackfillAGYLatencies(st.DB(), convDir)
+		}
+	}
 }

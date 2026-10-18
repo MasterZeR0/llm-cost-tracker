@@ -69,6 +69,7 @@ type agyStepTokens struct {
 	InputTokens     int64
 	OutputTokens    int64
 	CacheReadTokens int64
+	LatencyMS       int64
 }
 
 func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Request, store.SyncState, error) {
@@ -93,6 +94,7 @@ func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Req
 	var requests []store.Request
 	currentOffset := state.LastOffset
 	var prevTs time.Time
+	var prevTurnTs time.Time
 	sameTsCount := int64(0)
 
 	// Extract conversation id from path: .../brain/<id>/.system_generated/logs/transcript.jsonl
@@ -118,6 +120,15 @@ func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Req
 			currentOffset += int64(len(line))
 			var evt agyTranscriptEvent
 			if jsonErr := json.Unmarshal(line, &evt); jsonErr == nil {
+				parsedEvtTs := time.Now().UTC()
+				if evt.CreatedAt != "" {
+					if parsed, tErr := time.Parse(time.RFC3339Nano, evt.CreatedAt); tErr == nil {
+						parsedEvtTs = parsed
+					} else if parsed, tErr := time.Parse(time.RFC3339, evt.CreatedAt); tErr == nil {
+						parsedEvtTs = parsed
+					}
+				}
+
 				// Track runtime model change notifications in user input
 				if evt.Type == "USER_INPUT" && strings.Contains(evt.Content, "Model Selection") {
 					if dynamicModel := extractModelFromSettingsChange(evt.Content); dynamicModel != "" {
@@ -126,14 +137,7 @@ func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Req
 				}
 
 				if evt.Type == "PLANNER_RESPONSE" {
-					ts := time.Now().UTC()
-					if evt.CreatedAt != "" {
-						if parsed, tErr := time.Parse(time.RFC3339Nano, evt.CreatedAt); tErr == nil {
-							ts = parsed
-						} else if parsed, tErr := time.Parse(time.RFC3339, evt.CreatedAt); tErr == nil {
-							ts = parsed
-						}
-					}
+					ts := parsedEvtTs
 					// Use step_index if provided, or add offset on same-timestamp collision
 					if evt.StepIndex != nil {
 						ts = ts.Add(time.Duration(*evt.StepIndex) * time.Millisecond)
@@ -162,14 +166,30 @@ func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Req
 					outTokens := evt.OutputTokens
 					cacheTokens := evt.CacheReadTokens
 
-					// Backfill token counts from conversation DB steps table if missing from transcript (older AGY logs)
-					if inTokens == 0 && outTokens == 0 && evt.StepIndex != nil {
+					var latMS *int64
+					// Backfill token counts and latency from conversation DB steps table if available
+					if evt.StepIndex != nil {
 						if st, ok := sessionStepTokens[*evt.StepIndex]; ok {
-							inTokens = st.InputTokens
-							outTokens = st.OutputTokens
-							cacheTokens = st.CacheReadTokens
+							if inTokens == 0 && outTokens == 0 {
+								inTokens = st.InputTokens
+								outTokens = st.OutputTokens
+								cacheTokens = st.CacheReadTokens
+							}
+							if st.LatencyMS > 0 {
+								val := st.LatencyMS
+								latMS = &val
+							}
 						}
 					}
+
+					// Fallback to transcript delta if DB latency was not available
+					if latMS == nil && !prevTurnTs.IsZero() && parsedEvtTs.After(prevTurnTs) {
+						delta := parsedEvtTs.Sub(prevTurnTs).Milliseconds()
+						if delta > 0 && delta <= 300000 {
+							latMS = &delta
+						}
+					}
+					prevTurnTs = parsedEvtTs
 
 					reqID := uuid.New().String()
 					var toolCalls []store.ToolCall
@@ -203,6 +223,7 @@ func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Req
 						OutputTokens:      outTokens,
 						CacheReadTokens:   cacheTokens,
 						TotalTokens:       inTokens + outTokens,
+						LatencyMS:         latMS,
 						Status:            "success",
 						SourceFile:        source.Path,
 						RawData:           strings.TrimRight(string(line), "\r\n"),
@@ -212,7 +233,9 @@ func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Req
 						ToolCalls:         toolCalls,
 					}
 					requests = append(requests, req)
-				} else if len(requests) > 0 {
+				} else {
+					prevTurnTs = parsedEvtTs
+					if len(requests) > 0 {
 					// Correlate execution events with preceding request's tool calls
 					isErr := evt.Status == "ERROR" || (evt.ExitCode != nil && *evt.ExitCode != 0)
 					if isErr {
@@ -244,6 +267,7 @@ func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Req
 						}
 					}
 				}
+			}
 
 			}
 		}
@@ -343,19 +367,20 @@ func loadAGYSessionData(sourcePath string, sessionID string) (map[int]string, ma
 				rows.Close()
 			}
 
-			// Load step token metadata from steps table
+			// Load step token and latency metadata from steps table
 			sRows, sErr := db.Query("SELECT idx, metadata FROM steps WHERE metadata IS NOT NULL")
 			if sErr == nil {
 				for sRows.Next() {
 					var stepIdx int64
 					var meta []byte
 					if err := sRows.Scan(&stepIdx, &meta); err == nil && len(meta) > 0 {
-						inT, outT, cacheT := extractTokensFromStepMetadata(meta)
-						if inT > 0 || outT > 0 {
+						inT, outT, cacheT, latMS := extractStepMetadata(meta)
+						if inT > 0 || outT > 0 || latMS > 0 {
 							sessionStepTokens[stepIdx] = agyStepTokens{
 								InputTokens:     inT,
 								OutputTokens:    outT,
 								CacheReadTokens: cacheT,
+								LatencyMS:       latMS,
 							}
 						}
 					}
@@ -368,21 +393,151 @@ func loadAGYSessionData(sourcePath string, sessionID string) (map[int]string, ma
 	return sessionModels, sessionStepTokens, fallbackModel
 }
 
-func extractTokensFromStepMetadata(meta []byte) (int64, int64, int64) {
-	for i := 0; i < len(meta)-2; i++ {
-		// Field 9 (wire type 2): (9 << 3) | 2 = 74 = 0x4a
-		if meta[i] == 0x4a {
-			l, n := binary.Uvarint(meta[i+1:])
-			if n > 0 && l > 0 && l < 2000 && i+1+n+int(l) <= len(meta) {
-				sub := meta[i+1+n : i+1+n+int(l)]
-				inT, outT, cacheT := parseTokenSubmessage(sub)
-				if inT > 0 || outT > 0 {
-					return inT, outT, cacheT
+func parseTimestampSubmessage(buf []byte) (int64, int64) {
+	var sec, nanos int64
+	p := 0
+	for p < len(buf) {
+		tag, tn := binary.Uvarint(buf[p:])
+		if tn <= 0 {
+			break
+		}
+		p += tn
+		wire := tag & 7
+		fnum := tag >> 3
+		switch wire {
+		case 0: // varint
+			val, vn := binary.Uvarint(buf[p:])
+			if vn <= 0 {
+				return sec, nanos
+			}
+			p += vn
+			switch fnum {
+			case 1:
+				sec = int64(val)
+			case 2:
+				nanos = int64(val)
+			}
+		case 1: // 64-bit
+			if p+8 > len(buf) {
+				return sec, nanos
+			}
+			p += 8
+		case 2: // length-delimited
+			l, ln := binary.Uvarint(buf[p:])
+			if ln <= 0 || p+ln+int(l) > len(buf) {
+				return sec, nanos
+			}
+			p += ln + int(l)
+		case 5: // 32-bit
+			if p+4 > len(buf) {
+				return sec, nanos
+			}
+			p += 4
+		default:
+			return sec, nanos
+		}
+	}
+	return sec, nanos
+}
+
+func extractStepMetadata(meta []byte) (int64, int64, int64, int64) {
+	var inT, outT, cacheT, latencyMS int64
+	var tStartSec, tStartNanos int64
+	var tFirstSec, tFirstNanos int64
+	var tEndSec, tEndNanos int64
+
+	pos := 0
+	for pos < len(meta) {
+		tag, tn := binary.Uvarint(meta[pos:])
+		if tn <= 0 {
+			break
+		}
+		pos += tn
+		wire := tag & 7
+		fnum := tag >> 3
+
+		switch wire {
+		case 0: // varint
+			_, vn := binary.Uvarint(meta[pos:])
+			if vn <= 0 {
+				pos = len(meta)
+				break
+			}
+			pos += vn
+		case 1: // 64-bit
+			if pos+8 > len(meta) {
+				pos = len(meta)
+				break
+			}
+			pos += 8
+		case 2: // length-delimited
+			l, ln := binary.Uvarint(meta[pos:])
+			if ln <= 0 || pos+ln+int(l) > len(meta) {
+				pos = len(meta)
+				break
+			}
+			sub := meta[pos+ln : pos+ln+int(l)]
+			pos += ln + int(l)
+
+			switch fnum {
+			case 1: // Start timestamp
+				tStartSec, tStartNanos = parseTimestampSubmessage(sub)
+			case 6: // First token timestamp
+				tFirstSec, tFirstNanos = parseTimestampSubmessage(sub)
+			case 7, 8: // Completion timestamp
+				if tEndSec == 0 {
+					tEndSec, tEndNanos = parseTimestampSubmessage(sub)
+				}
+			case 9: // Tokens submessage
+				inT, outT, cacheT = parseTokenSubmessage(sub)
+			}
+		case 5: // 32-bit
+			if pos+4 > len(meta) {
+				pos = len(meta)
+				break
+			}
+			pos += 4
+		default:
+			pos = len(meta)
+		}
+	}
+
+	// Fallback to byte scan for field 9 if tokens weren't found via top-level walk
+	if inT == 0 && outT == 0 {
+		for i := 0; i < len(meta)-2; i++ {
+			if meta[i] == 0x4a { // Field 9 wire 2
+				l, n := binary.Uvarint(meta[i+1:])
+				if n > 0 && l > 0 && l < 2000 && i+1+n+int(l) <= len(meta) {
+					sub := meta[i+1+n : i+1+n+int(l)]
+					inT, outT, cacheT = parseTokenSubmessage(sub)
+					if inT > 0 || outT > 0 {
+						break
+					}
 				}
 			}
 		}
 	}
-	return 0, 0, 0
+
+	if tStartSec > 0 {
+		tStart := time.Unix(tStartSec, tStartNanos)
+		tEnd := time.Time{}
+		if tEndSec > 0 {
+			tEnd = time.Unix(tEndSec, tEndNanos)
+		}
+		if tFirstSec > 0 {
+			tFirst := time.Unix(tFirstSec, tFirstNanos)
+			// If completion took > 30s after first token (e.g. paused waiting for user input/approval),
+			// use first token time to avoid recording human wait time
+			if tEnd.IsZero() || tEnd.Sub(tFirst) > 30*time.Second {
+				tEnd = tFirst
+			}
+		}
+		if !tEnd.IsZero() && tEnd.After(tStart) {
+			latencyMS = tEnd.Sub(tStart).Milliseconds()
+		}
+	}
+
+	return inT, outT, cacheT, latencyMS
 }
 
 func parseTokenSubmessage(buf []byte) (int64, int64, int64) {
@@ -515,3 +670,83 @@ func normalizeAGYModel(raw string) string {
 
 	return lower
 }
+
+// BackfillAGYLatencies updates existing requests in trackerDB that are missing latency_ms
+// by reading the step metadata from conversation sqlite databases in conversationsDir.
+func BackfillAGYLatencies(trackerDB *sql.DB, conversationsDir string) (int, error) {
+	if trackerDB == nil || conversationsDir == "" {
+		return 0, nil
+	}
+
+	rows, err := trackerDB.Query("SELECT DISTINCT session_id FROM requests WHERE tool = 'agy' AND latency_ms IS NULL")
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var sessionIDs []string
+	for rows.Next() {
+		var sID string
+		if err := rows.Scan(&sID); err == nil && sID != "" {
+			sessionIDs = append(sessionIDs, sID)
+		}
+	}
+	rows.Close()
+
+	if len(sessionIDs) == 0 {
+		return 0, nil
+	}
+
+	tx, err := trackerDB.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare("UPDATE requests SET latency_ms = ? WHERE tool = 'agy' AND session_id = ? AND step_index = ? AND latency_ms IS NULL")
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+
+	updatedCount := 0
+
+	for _, sessionID := range sessionIDs {
+		dbPath := filepath.Join(conversationsDir, sessionID+".db")
+		if _, err := os.Stat(dbPath); err != nil {
+			continue
+		}
+
+		convDB, err := sql.Open("sqlite3", dbPath+"?mode=ro&_busy_timeout=1000")
+		if err != nil {
+			continue
+		}
+
+		sRows, sErr := convDB.Query("SELECT idx, metadata FROM steps WHERE metadata IS NOT NULL")
+		if sErr == nil {
+			for sRows.Next() {
+				var stepIdx int64
+				var meta []byte
+				if err := sRows.Scan(&stepIdx, &meta); err == nil && len(meta) > 0 {
+					_, _, _, latMS := extractStepMetadata(meta)
+					if latMS > 0 {
+						res, execErr := stmt.Exec(latMS, sessionID, stepIdx)
+						if execErr == nil {
+							n, _ := res.RowsAffected()
+							updatedCount += int(n)
+						}
+					}
+				}
+			}
+			sRows.Close()
+		}
+		convDB.Close()
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+
+	return updatedCount, nil
+}
+

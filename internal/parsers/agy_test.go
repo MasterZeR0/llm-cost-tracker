@@ -1,6 +1,7 @@
 package parsers_test
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
@@ -497,5 +498,123 @@ func TestAGYParser_ToolCallsAndErrors(t *testing.T) {
 		t.Errorf("expected run_command to be error, got %+v", r.ToolCalls[0])
 	}
 }
+
+func TestAGYParser_LatencyFromStepsDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	sessionID := "test-session-latency-db"
+
+	brainLogDir := filepath.Join(tmpDir, "brain", sessionID, ".system_generated", "logs")
+	if err := os.MkdirAll(brainLogDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	transcriptPath := filepath.Join(brainLogDir, "transcript.jsonl")
+
+	content := `{"step_index":1,"type":"PLANNER_RESPONSE","created_at":"2026-10-18T10:00:00Z","input_tokens":100,"output_tokens":50}` + "\n"
+	if err := os.WriteFile(transcriptPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	convDir := filepath.Join(tmpDir, "conversations")
+	if err := os.MkdirAll(convDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(convDir, sessionID+".db")
+	db, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.DB().Exec(`CREATE TABLE steps (idx integer primary key, metadata blob);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Helper to build protobuf timestamp field
+	buildTimestampField := func(fnum int, sec int64, nanos int64) []byte {
+		var sub []byte
+		sub = append(sub, 0x08) // field 1 varint (seconds)
+		var bSec [10]byte
+		nSec := binary.PutUvarint(bSec[:], uint64(sec))
+		sub = append(sub, bSec[:nSec]...)
+
+		if nanos > 0 {
+			sub = append(sub, 0x10) // field 2 varint (nanos)
+			var bNanos [10]byte
+			nNanos := binary.PutUvarint(bNanos[:], uint64(nanos))
+			sub = append(sub, bNanos[:nNanos]...)
+		}
+
+		var res []byte
+		var bTag [10]byte
+		nTag := binary.PutUvarint(bTag[:], uint64((fnum<<3)|2))
+		res = append(res, bTag[:nTag]...)
+
+		var bLen [10]byte
+		nLen := binary.PutUvarint(bLen[:], uint64(len(sub)))
+		res = append(res, bLen[:nLen]...)
+		res = append(res, sub...)
+		return res
+	}
+
+	// Start at 1700000000s, end at 1700000004s + 500ms -> duration = 4500ms
+	f1 := buildTimestampField(1, 1700000000, 0)
+	f7 := buildTimestampField(7, 1700000004, 500_000_000)
+
+	var stepMeta []byte
+	stepMeta = append(stepMeta, f1...)
+	stepMeta = append(stepMeta, f7...)
+
+	_, err = db.DB().Exec("INSERT INTO steps (idx, metadata) VALUES (1, ?)", stepMeta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	parser := &parsers.AGYParser{}
+	state := store.SyncState{SourcePath: transcriptPath, Tool: "agy"}
+	reqs, _, err := parser.Parse(parsers.DataSource{Path: transcriptPath, Type: "jsonl"}, state)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(reqs))
+	}
+	r := reqs[0]
+	if r.LatencyMS == nil {
+		t.Fatal("expected LatencyMS to be populated from steps.metadata, got nil")
+	}
+	if *r.LatencyMS != 4500 {
+		t.Errorf("expected LatencyMS 4500, got %d", *r.LatencyMS)
+	}
+}
+
+func TestAGYParser_LatencyFallbackFromTranscript(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "transcript.jsonl")
+
+	// 5 seconds between user input and planner response
+	content := `{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-10-18T10:00:00Z","content":"hello"}` + "\n" +
+		`{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-18T10:00:05Z","input_tokens":100,"output_tokens":50}` + "\n"
+
+	if err := os.WriteFile(logFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := &parsers.AGYParser{}
+	reqs, _, err := p.Parse(parsers.DataSource{Path: logFile, Type: "jsonl"}, store.SyncState{SourcePath: logFile, Tool: "agy"})
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(reqs))
+	}
+	r := reqs[0]
+	if r.LatencyMS == nil {
+		t.Fatal("expected fallback LatencyMS, got nil")
+	}
+	if *r.LatencyMS != 5000 {
+		t.Errorf("expected LatencyMS 5000, got %d", *r.LatencyMS)
+	}
+}
+
 
 
