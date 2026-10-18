@@ -1,0 +1,2 @@
+{"id":"cmd-001","session_id":"cli-session-1","timestamp":"2026-10-18T11:00:00Z","command_type":"explain","query":"git log --oneline --graph","explanation":"This command displays the git commit history in a compact graphical representation.","model":"gpt-4o"}
+{"id":"cmd-002","session_id":"cli-session-1","timestamp":"2026-10-18T11:05:00Z","command_type":"suggest","query":"list top memory consuming processes","suggestion":"ps aux --sort=-%mem | head -n 10","explanation":"Lists processes sorted by memory percentage descending."}
