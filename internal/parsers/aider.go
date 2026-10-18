@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 type AiderParser struct{}

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 )
 
 func TestDefaultConfig(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 	"github.com/spf13/cobra"
 )
 

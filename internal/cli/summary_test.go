@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/cli"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/cli"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestRenderSummary(t *testing.T) {

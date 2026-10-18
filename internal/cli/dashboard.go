@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/dashboard"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/dashboard"
 	"github.com/spf13/cobra"
 )
 

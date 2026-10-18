@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/daemon"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/daemon"
 	"github.com/spf13/cobra"
 )
 

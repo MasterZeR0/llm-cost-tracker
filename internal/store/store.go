@@ -8,7 +8,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
 )
 
 type Store struct {

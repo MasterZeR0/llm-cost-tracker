@@ -3,7 +3,7 @@ package pricing_test
 import (
 	"testing"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
 )
 
 func TestPricingEngine_StandardModels(t *testing.T) {

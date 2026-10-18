@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/dashboard"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/dashboard"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestDashboardAPI_Overview(t *testing.T) {

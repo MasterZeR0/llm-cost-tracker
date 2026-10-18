@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/parsers"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
 	"github.com/spf13/cobra"
 )
 

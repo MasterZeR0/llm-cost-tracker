@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/daemon"
-	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/daemon"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestDaemon_DuplicatePIDDetection(t *testing.T) {

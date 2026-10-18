@@ -6,8 +6,8 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 //go:embed static/*

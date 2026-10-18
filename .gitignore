@@ -1,2 +1,36 @@
+# Binaries
 bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# SQLite databases & temp files
 *.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Test & coverage outputs
+*.out
+*.test
+coverage.html
+
+# Local logs & data
+*.log
+local/
+
+# OS & Editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local reports
+QA_REPORT*.md
+FIX_REPORT*.md

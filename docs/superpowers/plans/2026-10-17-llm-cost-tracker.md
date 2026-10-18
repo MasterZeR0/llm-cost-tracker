@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go (1.24+), SQLite (`github.com/mattn/go-sqlite3`), Cobra (`github.com/spf13/cobra`), fsnotify (`github.com/fsnotify/fsnotify`), YAML (`gopkg.in/yaml.v3`), Google UUID (`github.com/google/uuid`), lumberjack (`gopkg.in/natefinsh/lumberjack.v2`), Chart.js (CDN).
 
-**Spec:** [docs/superpowers/specs/2026-10-17-llm-cost-tracker-design.md](file:///Users/nehaverma/orca/projects/llm-cost-tracker/docs/superpowers/specs/2026-10-17-llm-cost-tracker-design.md)
+**Spec:** [docs/superpowers/specs/2026-10-17-llm-cost-tracker-design.md](../specs/2026-10-17-llm-cost-tracker-design.md)
 
 ## Global Constraints
 
@@ -44,7 +44,7 @@
 
 Run:
 ```bash
-go mod init github.com/nehaverma/llm-cost-tracker
+go mod init github.com/MasterZeR0/llm-cost-tracker
 go get github.com/spf13/cobra@latest
 go get github.com/mattn/go-sqlite3@latest
 go get github.com/fsnotify/fsnotify@latest
@@ -64,7 +64,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -277,7 +277,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestStore_InitAndDeduplication(t *testing.T) {
@@ -634,7 +634,7 @@ package pricing_test
 import (
 	"testing"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
 )
 
 func TestPricingEngine_StandardModels(t *testing.T) {
@@ -852,8 +852,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/parsers"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestClaudeCodeParser_Parse(t *testing.T) {
@@ -918,8 +918,8 @@ Create `internal/parsers/parser.go`:
 package parsers
 
 import (
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 type DataSource struct {
@@ -983,8 +983,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 type ClaudeCodeParser struct{}
@@ -1134,8 +1134,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/parsers"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestAGYParser_Parse(t *testing.T) {
@@ -1175,8 +1175,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/parsers"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestAiderParser_Parse(t *testing.T) {
@@ -1229,8 +1229,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 type AGYParser struct{}
@@ -1347,8 +1347,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 type AiderParser struct{}
@@ -1476,8 +1476,8 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/nehaverma/llm-cost-tracker/internal/parsers"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestCodexParser_Parse(t *testing.T) {
@@ -1549,8 +1549,8 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/google/uuid"
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 type CodexParser struct{}
@@ -1663,8 +1663,8 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/google/uuid"
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 type OpenCodeParser struct{}
@@ -1783,10 +1783,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/daemon"
-	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/daemon"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestSyncAll_EndToEnd(t *testing.T) {
@@ -1846,10 +1846,10 @@ package daemon
 import (
 	"log/slog"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/parsers"
-	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func SyncAll(cfg *config.Config, st *store.Store, engine *pricing.Engine) (int, error) {
@@ -1934,9 +1934,9 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 type Daemon struct {
@@ -2293,9 +2293,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/dashboard"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/dashboard"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestDashboardAPI_Overview(t *testing.T) {
@@ -2356,7 +2356,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
@@ -2435,8 +2435,8 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 //go:embed static/*
@@ -2849,8 +2849,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/cli"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/cli"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestRenderSummary(t *testing.T) {
@@ -2903,9 +2903,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 var (
@@ -2970,7 +2970,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 var periodFlag string
@@ -3033,7 +3033,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/nehaverma/llm-cost-tracker/internal/daemon"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/daemon"
 )
 
 var syncCmd = &cobra.Command{
@@ -3064,7 +3064,7 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
-	"github.com/nehaverma/llm-cost-tracker/internal/daemon"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/daemon"
 )
 
 var daemonCmd = &cobra.Command{
@@ -3120,7 +3120,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/nehaverma/llm-cost-tracker/internal/dashboard"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/dashboard"
 )
 
 var dashboardCmd = &cobra.Command{
@@ -3142,7 +3142,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/nehaverma/llm-cost-tracker/internal/parsers"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
 )
 
 var toolsCmd = &cobra.Command{
@@ -3171,7 +3171,7 @@ Create `cmd/llm-track/main.go`:
 ```go
 package main
 
-import "github.com/nehaverma/llm-cost-tracker/internal/cli"
+import "github.com/MasterZeR0/llm-cost-tracker/internal/cli"
 
 func main() {
 	cli.Execute()
@@ -3217,10 +3217,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/daemon"
-	"github.com/nehaverma/llm-cost-tracker/internal/pricing"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/daemon"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestEndToEndPipeline(t *testing.T) {

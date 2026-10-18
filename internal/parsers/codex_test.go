@@ -7,9 +7,9 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/nehaverma/llm-cost-tracker/internal/config"
-	"github.com/nehaverma/llm-cost-tracker/internal/parsers"
-	"github.com/nehaverma/llm-cost-tracker/internal/store"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
+	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
 func TestCodexParser_Parse(t *testing.T) {
