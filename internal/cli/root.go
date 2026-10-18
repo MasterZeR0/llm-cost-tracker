@@ -40,9 +40,11 @@ func init() {
 	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(summaryCmd)
+	rootCmd.AddCommand(sessionsCmd)
 	rootCmd.AddCommand(dashboardCmd)
 	rootCmd.AddCommand(toolsCmd)
 }
+
 
 func initConfig() {
 	var err error

@@ -38,8 +38,14 @@ func TestRenderSummary(t *testing.T) {
 	if !bytes.Contains([]byte(out), []byte("LLM Cost Tracker")) {
 		t.Fatalf("expected title in output: %s", out)
 	}
-	if !bytes.Contains([]byte(out), []byte("Total Cost:     $1.25")) {
+	if !bytes.Contains([]byte(out), []byte("Total Cost:        $1.25")) {
 		t.Fatalf("expected total cost $1.25 in output: %s", out)
+	}
+	if !bytes.Contains([]byte(out), []byte("Total Sessions:")) {
+		t.Fatalf("expected Total Sessions in output: %s", out)
+	}
+	if !bytes.Contains([]byte(out), []byte("Cache Hit Rate:")) {
+		t.Fatalf("expected Cache Hit Rate in output: %s", out)
 	}
 }
 
@@ -58,13 +64,14 @@ func TestRenderSummary_Empty(t *testing.T) {
 	}
 
 	out := buf.String()
-	if !bytes.Contains([]byte(out), []byte("Total Cost:     $0.00")) {
+	if !bytes.Contains([]byte(out), []byte("Total Cost:        $0.00")) {
 		t.Fatalf("expected total cost $0.00: %s", out)
 	}
 	if bytes.Contains([]byte(out), []byte("By Tool:")) {
 		t.Fatalf("did not expect By Tool in empty summary: %s", out)
 	}
 }
+
 
 func TestRenderSummary_WithBreakdown(t *testing.T) {
 	tmpDir := t.TempDir()
