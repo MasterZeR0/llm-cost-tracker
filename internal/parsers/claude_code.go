@@ -41,6 +41,12 @@ func (p *ClaudeCodeParser) Discover(cfg config.ToolConfig) ([]DataSource, error)
 	return sources, nil
 }
 
+type claudeContentBlock struct {
+	Type string `json:"type"`
+	Name string `json:"name,omitempty"`
+	ID   string `json:"id,omitempty"`
+}
+
 type claudeAssistantEvent struct {
 	Type              string   `json:"type"`
 	CostUSD           *float64 `json:"costUSD"`
@@ -56,7 +62,14 @@ type claudeAssistantEvent struct {
 			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
 			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
+		Content json.RawMessage `json:"content,omitempty"`
 	} `json:"message"`
+}
+
+type claudeGenericEvent struct {
+	Type       string `json:"type"`
+	IsError    bool   `json:"is_error,omitempty"`
+	ToolUseID  string `json:"tool_use_id,omitempty"`
 }
 
 func (p *ClaudeCodeParser) Parse(source DataSource, state store.SyncState) ([]store.Request, store.SyncState, error) {
@@ -117,8 +130,28 @@ func (p *ClaudeCodeParser) Parse(source DataSource, state store.SyncState) ([]st
 					status = "error"
 				}
 
+				reqID := uuid.New().String()
+				var toolCalls []store.ToolCall
+				if len(evt.Message.Content) > 0 {
+					var blocks []claudeContentBlock
+					if json.Unmarshal(evt.Message.Content, &blocks) == nil {
+						for _, b := range blocks {
+							if b.Type == "tool_use" {
+								toolCalls = append(toolCalls, store.ToolCall{
+									ID:        uuid.New().String(),
+									RequestID: reqID,
+									SessionID: sessionID,
+									ToolName:  b.Name,
+									Status:    "success",
+									CreatedAt: ts,
+								})
+							}
+						}
+					}
+				}
+
 				req := store.Request{
-					ID:               uuid.New().String(),
+					ID:               reqID,
 					Tool:             "claude_code",
 					SessionID:        sessionID,
 					Timestamp:        ts,
@@ -133,14 +166,35 @@ func (p *ClaudeCodeParser) Parse(source DataSource, state store.SyncState) ([]st
 					Status:           status,
 					SourceFile:       source.Path,
 					RawData:          strings.TrimRight(string(line), "\r\n"),
+					StepIndex:        int64(len(requests)),
+					ToolCallCount:    len(toolCalls),
+					ToolCalls:        toolCalls,
 				}
 				requests = append(requests, req)
+			} else if len(requests) > 0 {
+				var generic claudeGenericEvent
+				if json.Unmarshal(line, &generic) == nil && generic.IsError {
+					lastReq := &requests[len(requests)-1]
+					marked := false
+					for i := len(lastReq.ToolCalls) - 1; i >= 0; i-- {
+						if lastReq.ToolCalls[i].Status != "error" {
+							lastReq.ToolCalls[i].Status = "error"
+							lastReq.ToolErrorCount++
+							marked = true
+							break
+						}
+					}
+					if !marked {
+						lastReq.ToolErrorCount++
+					}
+				}
 			}
 		}
 		if err != nil {
 			break
 		}
 	}
+
 
 	state.LastOffset = currentOffset
 	return requests, state, nil

@@ -262,3 +262,40 @@ func TestClaudeCodeParser_BillingErrorStatus(t *testing.T) {
 		t.Errorf("expected status 'error' for billing error event, got %q", reqs[0].Status)
 	}
 }
+
+func TestClaudeCodeParser_ToolCallsAndErrors(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "tools_session.jsonl")
+
+	content := `{"type":"assistant","message":{"model":"claude-3-7-sonnet","content":[{"type":"text","text":"running command"},{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"ls"}}],"usage":{"input_tokens":500,"output_tokens":50,"cache_read_input_tokens":200,"cache_creation_input_tokens":0}}}` + "\n" +
+		`{"type":"tool_result","tool_use_id":"toolu_1","is_error":true,"content":"permission denied"}` + "\n"
+
+	if err := os.WriteFile(logFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	parser := &parsers.ClaudeCodeParser{}
+	state := store.SyncState{SourcePath: logFile, Tool: "claude_code", LastOffset: 0}
+	reqs, _, err := parser.Parse(parsers.DataSource{Path: logFile, Type: "jsonl"}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(reqs))
+	}
+
+	r := reqs[0]
+	if r.ToolCallCount != 1 {
+		t.Errorf("expected 1 tool call, got %d", r.ToolCallCount)
+	}
+	if r.ToolErrorCount != 1 {
+		t.Errorf("expected 1 tool error, got %d", r.ToolErrorCount)
+	}
+	if len(r.ToolCalls) != 1 {
+		t.Fatalf("expected 1 ToolCall in slice, got %d", len(r.ToolCalls))
+	}
+	if r.ToolCalls[0].ToolName != "Bash" || r.ToolCalls[0].Status != "error" {
+		t.Errorf("unexpected tool call details: %+v", r.ToolCalls[0])
+	}
+}
+
