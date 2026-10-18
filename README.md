@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/MasterZeR0/llm-cost-tracker)](go.mod)
 
-A fast, lightweight Go daemon and CLI that automatically tracks costs, tokens, latencies, and cache efficiency across CLI coding assistants (**Claude Code**, **AGY / Gemini**, **Codex**, **Aider**, **OpenCode**) with zero workflow changes.
+A fast, lightweight Go daemon and CLI that automatically tracks costs, tokens, latencies, and cache efficiency across AI coding assistants and IDEs (**Claude Code**, **AGY / Gemini**, **Codex**, **Aider**, **OpenCode**, **Cline**, **Roo Code**, **Cursor**, **Windsurf**, **GitHub Copilot CLI**) with zero workflow changes.
 
 ---
 
@@ -118,8 +118,9 @@ llm-track dashboard
 
 ## Future Scope & Roadmap
 
-- [ ] **Additional Assistant Adapters**:
-  - Direct log & session ingestion for **Cursor**, **Windsurf**, **GitHub Copilot CLI**, and **Cline / Roo Code**.
+- [x] **IDE & Extension Assistant Adapters**:
+  - Direct log & session ingestion for **Cline**, **Roo Code**, **Cursor**, **Windsurf**, and **GitHub Copilot CLI**.
+- [ ] **Local LLM Runtimes (Phase 2)**:
   - Local LLM tracking for **Ollama** and **vLLM** endpoints.
 - [ ] **Budgeting & Spend Threshold Alerts**:
   - Daily/weekly/monthly spend budgets with configurable limits.
