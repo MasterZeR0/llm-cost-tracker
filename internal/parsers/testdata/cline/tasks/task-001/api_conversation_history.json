@@ -1,0 +1,34 @@
+[
+  {
+    "role": "user",
+    "content": "Please list the files in the directory."
+  },
+  {
+    "role": "assistant",
+    "content": "I will inspect the workspace files.\n<execute_command>ls -la</execute_command>",
+    "model": "claude-3-5-sonnet-20241022",
+    "ts": 1729250000000,
+    "usage": {
+      "input_tokens": 1200,
+      "output_tokens": 350,
+      "cache_creation_input_tokens": 5000,
+      "cache_read_input_tokens": 2500
+    }
+  },
+  {
+    "role": "user",
+    "content": "[execute_command for 'ls -la'] Result:\ntotal 8\n-rw-r--r-- 1 user staff 120 Oct 18 10:00 main.go"
+  },
+  {
+    "role": "assistant",
+    "content": "The directory contains main.go.\n<attempt_completion>Listed files successfully.</attempt_completion>",
+    "model": "claude-3-5-sonnet-20241022",
+    "ts": 1729250005000,
+    "usage": {
+      "input_tokens": 1500,
+      "output_tokens": 180,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 6200
+    }
+  }
+]
