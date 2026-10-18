@@ -15,9 +15,9 @@
         <label for="period">Period:</label>
         <select id="period" onchange="loadDashboard()">
           <option value="today">Today</option>
-          <option value="week" selected>Last 7 Days</option>
+          <option value="week">Last 7 Days</option>
           <option value="month">Last 30 Days</option>
-          <option value="all">All Time</option>
+          <option value="all" selected>All Time</option>
         </select>
       </div>
     </header>
@@ -39,6 +39,20 @@
         <h3>Avg Latency</h3>
         <p id="avg-latency" class="metric">-</p>
       </div>
+      <div class="card">
+        <h3>Cache Efficiency</h3>
+        <div class="metric-row">
+          <p id="cache-hit-rate" class="metric">-</p>
+          <span id="cache-savings" class="badge badge-success">$0.00 saved</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Total Sessions</h3>
+        <div class="metric-row">
+          <p id="total-sessions" class="metric">-</p>
+          <span id="turns-per-session" class="sub-metric">- turns/sess</span>
+        </div>
+      </div>
     </div>
 
     <div class="charts-grid">
@@ -58,6 +72,33 @@
         <h3>Tool Distribution</h3>
         <canvas id="toolUsageChart"></canvas>
       </div>
+      <div class="chart-box">
+        <h3>Tool Invocations Breakdown</h3>
+        <canvas id="toolInvocationsChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3>Token Composition</h3>
+        <canvas id="tokenCompositionChart"></canvas>
+      </div>
+    </div>
+
+    <div class="table-box" style="margin-bottom: 24px;">
+      <h3>Recent Sessions Explorer</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Session ID</th>
+            <th>Tool</th>
+            <th>Turns</th>
+            <th>Duration</th>
+            <th>Cache %</th>
+            <th>Cost</th>
+            <th>Tool Calls</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="sessions-table"></tbody>
+      </table>
     </div>
 
     <div class="table-box">
@@ -76,6 +117,39 @@
         </thead>
         <tbody id="requests-table"></tbody>
       </table>
+    </div>
+
+    <!-- Session Detail Modal -->
+    <div id="session-modal" class="modal" style="display: none;">
+      <div class="modal-backdrop" onclick="closeSessionModal()"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modal-title">Session Details</h3>
+          <button class="close-btn" onclick="closeSessionModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="modal-summary" class="modal-summary-grid"></div>
+          <h4>Turns Drilldown</h4>
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Turn</th>
+                  <th>Time</th>
+                  <th>Model</th>
+                  <th>Input Miss</th>
+                  <th>Cache Read</th>
+                  <th>Output</th>
+                  <th>Cost</th>
+                  <th>Latency</th>
+                  <th>Tool Calls</th>
+                </tr>
+              </thead>
+              <tbody id="modal-turns-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
   <script src="app.js"></script>

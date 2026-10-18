@@ -40,6 +40,11 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /api/tokens-by-model", s.handleTokensByModel)
 	s.router.HandleFunc("GET /api/tool-usage", s.handleToolUsage)
 	s.router.HandleFunc("GET /api/requests", s.handleRecentRequests)
+	s.router.HandleFunc("GET /api/analytics/cache", s.handleAnalyticsCache)
+	s.router.HandleFunc("GET /api/analytics/tools", s.handleAnalyticsTools)
+	s.router.HandleFunc("GET /api/sessions", s.handleSessions)
+	s.router.HandleFunc("GET /api/sessions/detail", s.handleSessionDetail)
+	s.router.HandleFunc("GET /api/sessions/{id}", s.handleSessionDetail)
 
 	sub, err := fs.Sub(staticFS, "static")
 	if err == nil {

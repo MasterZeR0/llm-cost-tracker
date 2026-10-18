@@ -50,6 +50,26 @@ func TestPricingEngine_StandardModels(t *testing.T) {
 		t.Fatalf("expected cost ~1.54 for o3-mini, got %v", costO3Mini)
 	}
 
+	// Gemini 3.8 Flash: Input $0.10/m, Output $0.40/m
+	costGemini3Flash, ok := e.CalculateCost("gemini-3-8-flash", 1_000_000, 100_000, 0, 0)
+	if !ok {
+		t.Fatal("expected gemini-3-8-flash to match")
+	}
+	// 0.10 + 0.04 = 0.14
+	if costGemini3Flash == nil || *costGemini3Flash < 0.139 || *costGemini3Flash > 0.141 {
+		t.Fatalf("expected cost ~0.14 for gemini-3-8-flash, got %v", costGemini3Flash)
+	}
+
+	// Claude Opus 4-6 Thinking: Input $5/m, Output $25/m
+	costOpus46, ok := e.CalculateCost("claude-opus-4-6-thinking", 1_000_000, 100_000, 0, 0)
+	if !ok {
+		t.Fatal("expected claude-opus-4-6-thinking to match")
+	}
+	// 5.00 + 2.50 = 7.50
+	if costOpus46 == nil || *costOpus46 < 7.49 || *costOpus46 > 7.51 {
+		t.Fatalf("expected cost ~7.50 for claude-opus-4-6-thinking, got %v", costOpus46)
+	}
+
 	// Unknown model
 	unknownCost, ok := e.CalculateCost("totally-unknown-model-xyz", 1000, 1000, 0, 0)
 	if ok || unknownCost != nil {

@@ -10,6 +10,12 @@ var DefaultModelPrices = map[string]ModelPrice{
 		CacheReadPerMTok:  0.50,
 		CacheWritePerMTok: 6.25,
 	},
+	"claude-opus-4-[5-9]*": {
+		InputPerMTok:      5.00,
+		OutputPerMTok:     25.00,
+		CacheReadPerMTok:  0.50,
+		CacheWritePerMTok: 6.25,
+	},
 	"claude-opus-5*": {
 		InputPerMTok:      4.00,
 		OutputPerMTok:     20.00,
@@ -93,6 +99,14 @@ var DefaultModelPrices = map[string]ModelPrice{
 	},
 
 	// Google Gemini Family
+	"gemini-3*flash*": {
+		InputPerMTok:      0.10,
+		OutputPerMTok:     0.40,
+	},
+	"gemini-3*pro*": {
+		InputPerMTok:      1.25,
+		OutputPerMTok:     5.00,
+	},
 	"gemini-2*flash*": {
 		InputPerMTok:      0.10,
 		OutputPerMTok:     0.40,

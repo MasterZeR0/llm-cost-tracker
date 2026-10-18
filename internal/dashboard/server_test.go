@@ -191,3 +191,156 @@ func TestDashboardAPI_AllEndpoints(t *testing.T) {
 		t.Fatalf("expected 2 requests for today, got %d", len(todayReqs))
 	}
 }
+
+func TestDashboardAPI_AnalyticsAndSessions(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	cost1 := 0.10
+	cost2 := 0.20
+	latency1 := int64(500)
+	latency2 := int64(700)
+	now := time.Now().UTC()
+
+	reqs := []store.Request{
+		{
+			ID: "r1", Tool: "claude_code", SessionID: "sess-1", Timestamp: now.Add(-time.Minute),
+			Model: "claude-3-7-sonnet", InputTokens: 1000, OutputTokens: 200, CacheReadTokens: 500,
+			TotalTokens: 1700, CostUSD: &cost1, LatencyMS: &latency1, Status: "success",
+			StepIndex: 1, ToolCallCount: 1, ToolErrorCount: 0,
+			ToolCalls: []store.ToolCall{
+				{
+					ID: "tc-1", RequestID: "r1", SessionID: "sess-1",
+					ToolName: "ReadFile", Status: "success", CreatedAt: now.Add(-time.Minute),
+				},
+			},
+		},
+		{
+			ID: "r2", Tool: "claude_code", SessionID: "sess-1", Timestamp: now,
+			Model: "claude-3-7-sonnet", InputTokens: 1500, OutputTokens: 300, CacheReadTokens: 1000,
+			TotalTokens: 2800, CostUSD: &cost2, LatencyMS: &latency2, Status: "success",
+			StepIndex: 2, ToolCallCount: 1, ToolErrorCount: 1,
+			ToolCalls: []store.ToolCall{
+				{
+					ID: "tc-2", RequestID: "r2", SessionID: "sess-1",
+					ToolName: "RunBash", Status: "error", CreatedAt: now,
+				},
+			},
+		},
+	}
+
+	_, err = st.InsertRequests(reqs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	srv := dashboard.NewServer(cfg, st)
+
+	// 1. GET /api/analytics/cache
+	req := httptest.NewRequest("GET", "/api/analytics/cache?period=all", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("analytics/cache: expected 200, got %d", w.Code)
+	}
+	var cacheStats store.CacheStats
+	if err := json.Unmarshal(w.Body.Bytes(), &cacheStats); err != nil {
+		t.Fatal(err)
+	}
+	if cacheStats.CacheHitTokens != 1500 {
+		t.Fatalf("expected 1500 cache hit tokens, got %d", cacheStats.CacheHitTokens)
+	}
+	if cacheStats.CacheMissTokens != 2500 {
+		t.Fatalf("expected 2500 cache miss tokens, got %d", cacheStats.CacheMissTokens)
+	}
+	if cacheStats.OutputTokens != 500 {
+		t.Fatalf("expected 500 output tokens, got %d", cacheStats.OutputTokens)
+	}
+	if cacheStats.CacheHitRate <= 0 {
+		t.Fatalf("expected cache hit rate > 0, got %f", cacheStats.CacheHitRate)
+	}
+
+	// 2. GET /api/analytics/tools
+	req = httptest.NewRequest("GET", "/api/analytics/tools?period=all", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("analytics/tools: expected 200, got %d", w.Code)
+	}
+	var toolStats []store.ToolCallStat
+	if err := json.Unmarshal(w.Body.Bytes(), &toolStats); err != nil {
+		t.Fatal(err)
+	}
+	if len(toolStats) != 2 {
+		t.Fatalf("expected 2 tool stats, got %d", len(toolStats))
+	}
+
+	// 3. GET /api/sessions
+	req = httptest.NewRequest("GET", "/api/sessions?period=all&limit=10", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sessions: expected 200, got %d", w.Code)
+	}
+	var sessions []store.SessionSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &sessions); err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].SessionID != "sess-1" {
+		t.Fatalf("expected sess-1, got %s", sessions[0].SessionID)
+	}
+	if sessions[0].TurnCount != 2 {
+		t.Fatalf("expected 2 turns, got %d", sessions[0].TurnCount)
+	}
+
+	// 4. GET /api/sessions/detail?id=...
+	req = httptest.NewRequest("GET", "/api/sessions/detail?id=sess-1", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sessions/detail query: expected 200, got %d", w.Code)
+	}
+	var detail store.SessionDetail
+	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.Summary.SessionID != "sess-1" {
+		t.Fatalf("expected session sess-1, got %s", detail.Summary.SessionID)
+	}
+	if len(detail.Turns) != 2 {
+		t.Fatalf("expected 2 turns, got %d", len(detail.Turns))
+	}
+
+	// 5. GET /api/sessions/{id}
+	req = httptest.NewRequest("GET", "/api/sessions/sess-1", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sessions/{id} path: expected 200, got %d", w.Code)
+	}
+	var pathDetail store.SessionDetail
+	if err := json.Unmarshal(w.Body.Bytes(), &pathDetail); err != nil {
+		t.Fatal(err)
+	}
+	if pathDetail.Summary.SessionID != "sess-1" {
+		t.Fatalf("expected session sess-1, got %s", pathDetail.Summary.SessionID)
+	}
+
+	// 6. Missing session ID returns 400
+	req = httptest.NewRequest("GET", "/api/sessions/detail", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing id, got %d", w.Code)
+	}
+}
+

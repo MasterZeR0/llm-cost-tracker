@@ -67,8 +67,9 @@ func (s *Store) DB() *sql.DB {
 }
 
 func (s *Store) InsertRequests(reqs []Request) (int, error) {
-	return s.insertRequestsInternal(reqs, false)
+	return s.insertRequestsInternal(reqs, true)
 }
+
 
 func (s *Store) InsertRequestsWithTools(reqs []Request) error {
 	_, err := s.insertRequestsInternal(reqs, true)
