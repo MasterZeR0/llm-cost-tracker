@@ -120,6 +120,58 @@ func TestAiderParser_Discover(t *testing.T) {
 	if len(sourcesEmpty) != 0 {
 		t.Fatalf("expected 0 sources for empty config, got %d", len(sourcesEmpty))
 	}
+
+	// When Paths contains a direct file
+	pathFile := filepath.Join(tmpDir, "custom.jsonl")
+	if err := os.WriteFile(pathFile, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfgPathsFile := config.ToolConfig{
+		Paths: []string{pathFile},
+	}
+	sourcesPathsFile, err := parser.Discover(cfgPathsFile)
+	if err != nil {
+		t.Fatalf("unexpected error during Discover: %v", err)
+	}
+	if len(sourcesPathsFile) != 1 || sourcesPathsFile[0].Path != pathFile {
+		t.Fatalf("expected 1 source with path %s, got %+v", pathFile, sourcesPathsFile)
+	}
+
+	// When Paths contains a directory containing .aider.analytics.jsonl
+	projDir := filepath.Join(tmpDir, "my-repo")
+	if err := os.MkdirAll(projDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	projAnalytics := filepath.Join(projDir, ".aider.analytics.jsonl")
+	if err := os.WriteFile(projAnalytics, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfgPathsDir := config.ToolConfig{
+		Paths: []string{projDir},
+	}
+	sourcesPathsDir, err := parser.Discover(cfgPathsDir)
+	if err != nil {
+		t.Fatalf("unexpected error during Discover: %v", err)
+	}
+	if len(sourcesPathsDir) != 1 || sourcesPathsDir[0].Path != projAnalytics {
+		t.Fatalf("expected 1 source with path %s, got %+v", projAnalytics, sourcesPathsDir)
+	}
+
+	// When both are empty and .aider.analytics.jsonl exists in cwd
+	cwdTestDir := t.TempDir()
+	cwdAnalytics := filepath.Join(cwdTestDir, ".aider.analytics.jsonl")
+	if err := os.WriteFile(cwdAnalytics, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwdTestDir)
+
+	sourcesCwd, err := parser.Discover(config.ToolConfig{})
+	if err != nil {
+		t.Fatalf("unexpected error during Discover in cwd: %v", err)
+	}
+	if len(sourcesCwd) != 1 || sourcesCwd[0].Path != ".aider.analytics.jsonl" {
+		t.Fatalf("expected 1 source .aider.analytics.jsonl from cwd, got %+v", sourcesCwd)
+	}
 }
 
 func TestAiderParser_TruncationAndIncompleteLine(t *testing.T) {

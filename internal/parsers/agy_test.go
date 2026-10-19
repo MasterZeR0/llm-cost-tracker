@@ -615,6 +615,3 @@ func TestAGYParser_LatencyFallbackFromTranscript(t *testing.T) {
 		t.Errorf("expected LatencyMS 5000, got %d", *r.LatencyMS)
 	}
 }
-
-
-

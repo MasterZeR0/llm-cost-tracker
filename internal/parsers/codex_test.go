@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestCodexParser_Parse(t *testing.T) {

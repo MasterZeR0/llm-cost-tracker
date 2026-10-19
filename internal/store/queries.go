@@ -9,7 +9,6 @@ import (
 	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
 )
 
-
 type TimeSeriesPoint struct {
 	Date string  `json:"date"`
 	Tool string  `json:"tool"`
@@ -49,11 +48,11 @@ type ModelUsagePoint struct {
 func periodClause(period string) string {
 	switch period {
 	case "today":
-		return "WHERE timestamp >= date('now', 'start of day')"
+		return "WHERE timestamp >= date('now', 'localtime', 'start of day')"
 	case "week":
-		return "WHERE timestamp >= date('now', '-7 days')"
+		return "WHERE timestamp >= date('now', 'localtime', '-7 days')"
 	case "month":
-		return "WHERE timestamp >= date('now', '-30 days')"
+		return "WHERE timestamp >= date('now', 'localtime', '-30 days')"
 	default:
 		return ""
 	}
@@ -170,7 +169,6 @@ func (s *Store) calculateCacheSavings(whereClause string) (float64, error) {
 	}
 	return totalSavings, rows.Err()
 }
-
 
 func (s *Store) GetCostOverTime(period string) ([]TimeSeriesPoint, error) {
 	clause := periodClause(period)
@@ -619,6 +617,30 @@ func (s *Store) GetSessionDetail(sessionID string) (*SessionDetail, error) {
 	}
 	defer rows.Close()
 
+	// Query all tool calls for the session in a single query
+	toolCallsByReq := make(map[string][]ToolCall)
+	tcRows, tcErr := s.db.Query(`
+		SELECT id, request_id, session_id, tool_name, coalesce(status, 'success'), created_at
+		FROM tool_calls
+		WHERE session_id = ?
+		ORDER BY created_at ASC
+	`, sessionID)
+	if tcErr == nil {
+		for tcRows.Next() {
+			var tc ToolCall
+			var tcTimeStr string
+			if err := tcRows.Scan(&tc.ID, &tc.RequestID, &tc.SessionID, &tc.ToolName, &tc.Status, &tcTimeStr); err == nil {
+				if t, err := time.Parse(time.RFC3339Nano, tcTimeStr); err == nil {
+					tc.CreatedAt = t
+				} else if t, err := time.Parse(time.RFC3339, tcTimeStr); err == nil {
+					tc.CreatedAt = t
+				}
+				toolCallsByReq[tc.RequestID] = append(toolCallsByReq[tc.RequestID], tc)
+			}
+		}
+		tcRows.Close()
+	}
+
 	var turns []Request
 	for rows.Next() {
 		var r Request
@@ -648,27 +670,8 @@ func (s *Store) GetSessionDetail(sessionID string) (*SessionDetail, error) {
 			r.LatencyMS = &latency.Int64
 		}
 
-		// Query tool calls for this turn
-		tcRows, tcErr := s.db.Query(`
-			SELECT id, request_id, session_id, tool_name, coalesce(status, 'success'), created_at
-			FROM tool_calls
-			WHERE request_id = ?
-			ORDER BY created_at ASC
-		`, r.ID)
-		if tcErr == nil {
-			for tcRows.Next() {
-				var tc ToolCall
-				var tcTimeStr string
-				if err := tcRows.Scan(&tc.ID, &tc.RequestID, &tc.SessionID, &tc.ToolName, &tc.Status, &tcTimeStr); err == nil {
-					if t, err := time.Parse(time.RFC3339Nano, tcTimeStr); err == nil {
-						tc.CreatedAt = t
-					} else if t, err := time.Parse(time.RFC3339, tcTimeStr); err == nil {
-						tc.CreatedAt = t
-					}
-					r.ToolCalls = append(r.ToolCalls, tc)
-				}
-			}
-			tcRows.Close()
+		if tcs, ok := toolCallsByReq[r.ID]; ok {
+			r.ToolCalls = tcs
 		}
 
 		turns = append(turns, r)
@@ -714,4 +717,3 @@ func (s *Store) GetToolCallStats(period string) ([]ToolCallStat, error) {
 	}
 	return stats, nil
 }
-

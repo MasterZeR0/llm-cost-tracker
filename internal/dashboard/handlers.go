@@ -150,4 +150,3 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, detail)
 }
-

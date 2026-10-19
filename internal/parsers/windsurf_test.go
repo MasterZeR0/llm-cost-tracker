@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestWindsurfParser_Name(t *testing.T) {
@@ -275,5 +275,80 @@ func TestWindsurfParser_PartialWriteResilience(t *testing.T) {
 	}
 	if newState2.LastOffset <= 0 {
 		t.Errorf("expected positive LastOffset after successful parse, got %d", newState2.LastOffset)
+	}
+}
+
+func TestWindsurfParser_Discover_FiltersNonCascadeJSON(t *testing.T) {
+	dir := t.TempDir()
+	wsDir := filepath.Join(dir, "workspaceStorage", "workspace-1")
+	cascadeDir := filepath.Join(dir, "cascade")
+	otherDir := filepath.Join(dir, "other")
+	for _, d := range []string{wsDir, cascadeDir, otherDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Non-cascade json files that must be ignored
+	_ = os.WriteFile(filepath.Join(wsDir, "workspace.json"), []byte(`{"folder": "foo"}`), 0644)
+	_ = os.WriteFile(filepath.Join(wsDir, "state.json"), []byte(`{"state": 1}`), 0644)
+	_ = os.WriteFile(filepath.Join(otherDir, "settings.json"), []byte(`{"editor": true}`), 0644)
+
+	// Valid cascade and vscdb files that must be discovered
+	_ = os.WriteFile(filepath.Join(wsDir, "state.vscdb"), []byte(""), 0644)
+	_ = os.WriteFile(filepath.Join(cascadeDir, "session.json"), []byte("{}"), 0644)
+	_ = os.WriteFile(filepath.Join(otherDir, "my-cascade-log.json"), []byte("{}"), 0644)
+
+	p := &parsers.WindsurfParser{}
+	sources, err := p.Discover(config.ToolConfig{
+		Enabled: true,
+		Paths:   []string{dir},
+	})
+	if err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	if len(sources) != 3 {
+		t.Fatalf("expected exactly 3 sources discovered, got %d: %+v", len(sources), sources)
+	}
+
+	for _, s := range sources {
+		base := filepath.Base(s.Path)
+		if base != "state.vscdb" && base != "session.json" && base != "my-cascade-log.json" {
+			t.Errorf("unexpected discovered source: %s", s.Path)
+		}
+	}
+}
+
+func TestWindsurfParser_NonCascadeJSON_GracefulSkip(t *testing.T) {
+	dir := t.TempDir()
+	p := &parsers.WindsurfParser{}
+
+	// Case 1: Arbitrary object JSON that is not a cascade session
+	wsJSON := filepath.Join(dir, "workspace.json")
+	if err := os.WriteFile(wsJSON, []byte(`{"folder": "file:///path/to/project"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	state1 := store.SyncState{SourcePath: wsJSON, Tool: "windsurf"}
+	reqs1, _, err := p.Parse(parsers.DataSource{Path: wsJSON, Type: "json"}, state1)
+	if err != nil {
+		t.Fatalf("expected no fatal error for non-cascade JSON, got %v", err)
+	}
+	if len(reqs1) != 0 {
+		t.Fatalf("expected 0 requests, got %d", len(reqs1))
+	}
+
+	// Case 2: Array JSON that fails cascade unmarshal completely
+	arrJSON := filepath.Join(dir, "meta.json")
+	if err := os.WriteFile(arrJSON, []byte(`[{"id": 1}, {"id": 2}]`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	state2 := store.SyncState{SourcePath: arrJSON, Tool: "windsurf"}
+	reqs2, _, err := p.Parse(parsers.DataSource{Path: arrJSON, Type: "json"}, state2)
+	if err != nil {
+		t.Fatalf("expected no fatal error for non-cascade array JSON, got %v", err)
+	}
+	if len(reqs2) != 0 {
+		t.Fatalf("expected 0 requests, got %d", len(reqs2))
 	}
 }

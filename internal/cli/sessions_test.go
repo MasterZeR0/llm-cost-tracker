@@ -45,7 +45,7 @@ func TestRenderSessionsList_And_Detail(t *testing.T) {
 			},
 		},
 	}
-	if err := st.InsertRequestsWithTools([]store.Request{req}); err != nil {
+	if _, err := st.InsertRequests([]store.Request{req}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -133,4 +133,3 @@ func TestRenderSessionsList_Empty(t *testing.T) {
 		t.Errorf("expected empty notice: %s", out)
 	}
 }
-

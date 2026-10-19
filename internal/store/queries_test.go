@@ -312,7 +312,7 @@ func TestStore_AnalyticsQueries(t *testing.T) {
 		},
 	}
 
-	if err := st.InsertRequestsWithTools([]store.Request{req1, req2, req3}); err != nil {
+	if _, err := st.InsertRequests([]store.Request{req1, req2, req3}); err != nil {
 		t.Fatalf("failed to insert test data: %v", err)
 	}
 
@@ -599,4 +599,3 @@ func TestStore_LatencyOverTimeAndModelUsage(t *testing.T) {
 		t.Fatalf("unexpected mu[1]: %+v", mu[1])
 	}
 }
-

@@ -164,3 +164,80 @@ func TestDaemon_RecursiveWatch(t *testing.T) {
 		t.Fatal("expected fsnotify to detect change in nested directory")
 	}
 }
+
+func TestDaemon_FSEventDebounce(t *testing.T) {
+	tmpDir := t.TempDir()
+	nestedDir := filepath.Join(tmpDir, "projects", "proj-debounce")
+	if err := os.MkdirAll(nestedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.DataDir = tmpDir
+	cfg.Daemon.WatchFSEvents = true
+	cfg.Daemon.PollInterval = 10 * time.Minute
+	cfg.Tools = map[string]config.ToolConfig{
+		"claude_code": {
+			Enabled: true,
+			Paths:   []string{filepath.Join(tmpDir, "projects")},
+		},
+	}
+
+	dbPath := filepath.Join(tmpDir, "tracker.db")
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	engine := pricing.NewEngine(nil)
+	d := daemon.NewDaemon(cfg, st, engine)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = d.Start(ctx)
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+
+	sessionFile := filepath.Join(nestedDir, "session.jsonl")
+	f, err := os.OpenFile(sessionFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Write 5 rapid events within ~100ms
+	for i := 0; i < 5; i++ {
+		line := `{"type":"assistant","costUSD":0.001,"durationMs":100,"message":{"model":"claude-3-haiku","role":"assistant","usage":{"input_tokens":10,"output_tokens":10,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}` + "\n"
+		if _, writeErr := f.WriteString(line); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	f.Close()
+
+	// Immediately after writes (e.g. 100ms after last write), debounce timer (500ms) should not have fired yet
+	time.Sleep(100 * time.Millisecond)
+	stats, err := st.GetOverview("all")
+	if err == nil && stats.TotalRequests > 0 {
+		t.Logf("Note: sync completed early or caught initial write; total: %d", stats.TotalRequests)
+	}
+
+	// Wait for debounce timer to fire (500ms debounce + margin)
+	var synced bool
+	for i := 0; i < 20; i++ {
+		time.Sleep(100 * time.Millisecond)
+		stats, err := st.GetOverview("all")
+		if err == nil && stats.TotalRequests == 5 {
+			synced = true
+			break
+		}
+	}
+
+	if !synced {
+		stats, _ := st.GetOverview("all")
+		t.Fatalf("expected 5 requests to be synced after debouncing, got %d", stats.TotalRequests)
+	}
+}

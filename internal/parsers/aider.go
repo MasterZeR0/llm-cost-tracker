@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
+	"github.com/google/uuid"
 )
 
 type AiderParser struct{}
@@ -26,12 +26,47 @@ func (p *AiderParser) Name() string {
 
 func (p *AiderParser) Discover(cfg config.ToolConfig) ([]DataSource, error) {
 	var sources []DataSource
+	seen := make(map[string]bool)
+
 	if cfg.AnalyticsLog != "" {
 		expanded := config.ExpandHome(cfg.AnalyticsLog)
-		if _, err := os.Stat(expanded); err == nil {
-			sources = append(sources, DataSource{Path: expanded, Type: "jsonl"})
+		if fi, err := os.Stat(expanded); err == nil && !fi.IsDir() {
+			if !seen[expanded] {
+				seen[expanded] = true
+				sources = append(sources, DataSource{Path: expanded, Type: "jsonl"})
+			}
 		}
 	}
+
+	for _, searchPath := range cfg.Paths {
+		expanded := config.ExpandHome(searchPath)
+		fi, err := os.Stat(expanded)
+		if err != nil {
+			continue
+		}
+		if fi.IsDir() {
+			candidate := filepath.Join(expanded, ".aider.analytics.jsonl")
+			if cfi, err := os.Stat(candidate); err == nil && !cfi.IsDir() {
+				if !seen[candidate] {
+					seen[candidate] = true
+					sources = append(sources, DataSource{Path: candidate, Type: "jsonl"})
+				}
+			}
+		} else {
+			if !seen[expanded] {
+				seen[expanded] = true
+				sources = append(sources, DataSource{Path: expanded, Type: "jsonl"})
+			}
+		}
+	}
+
+	if cfg.AnalyticsLog == "" && len(cfg.Paths) == 0 {
+		cwdAnalytics := ".aider.analytics.jsonl"
+		if fi, err := os.Stat(cwdAnalytics); err == nil && !fi.IsDir() {
+			sources = append(sources, DataSource{Path: cwdAnalytics, Type: "jsonl"})
+		}
+	}
+
 	return sources, nil
 }
 

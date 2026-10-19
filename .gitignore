@@ -35,4 +35,6 @@ local/
 QA_REPORT*.md
 FIX_REPORT*.md
 repomix-output.*
-
+# Local assistant and hook metadata
+.claude/
+.trail/

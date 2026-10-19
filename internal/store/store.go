@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type Store struct {
@@ -50,15 +50,16 @@ func NewStore(dbPath string) (*Store, error) {
 }
 
 func (s *Store) seedPricing() error {
-	stmt, err := s.db.Prepare(`
-		INSERT INTO pricing (
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`
+		INSERT OR IGNORE INTO pricing (
 			model_pattern, input_per_mtok, output_per_mtok, cache_read_per_mtok, cache_write_per_mtok, effective_date, source
 		) VALUES (?, ?, ?, ?, ?, '2026-01-01', 'default')
-		ON CONFLICT(model_pattern) DO UPDATE SET
-			input_per_mtok = excluded.input_per_mtok,
-			output_per_mtok = excluded.output_per_mtok,
-			cache_read_per_mtok = excluded.cache_read_per_mtok,
-			cache_write_per_mtok = excluded.cache_write_per_mtok
 	`)
 	if err != nil {
 		return err
@@ -70,7 +71,7 @@ func (s *Store) seedPricing() error {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *Store) migrate() error {
@@ -114,12 +115,6 @@ func (s *Store) DB() *sql.DB {
 
 func (s *Store) InsertRequests(reqs []Request) (int, error) {
 	return s.insertRequestsInternal(reqs, true)
-}
-
-
-func (s *Store) InsertRequestsWithTools(reqs []Request) error {
-	_, err := s.insertRequestsInternal(reqs, true)
-	return err
 }
 
 func (s *Store) insertRequestsInternal(reqs []Request, saveTools bool) (int, error) {
@@ -208,7 +203,6 @@ func (s *Store) insertRequestsInternal(reqs []Request, saveTools bool) (int, err
 	}
 	return inserted, nil
 }
-
 
 func (s *Store) GetSyncState(sourcePath string) (*SyncState, error) {
 	row := s.db.QueryRow(`

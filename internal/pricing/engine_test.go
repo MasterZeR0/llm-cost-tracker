@@ -347,4 +347,3 @@ func TestPricingEngine_NewAssistantModels(t *testing.T) {
 		})
 	}
 }
-

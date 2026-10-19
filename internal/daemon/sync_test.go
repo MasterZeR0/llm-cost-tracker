@@ -240,7 +240,7 @@ func TestStopDaemon_Errors(t *testing.T) {
 	}
 }
 
-func TestDaemon_BackgroundProcessWrappers(t *testing.T) {
+func TestDaemon_StopDaemonMissingPID(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 	st, err := store.NewStore(dbPath)
@@ -249,9 +249,9 @@ func TestDaemon_BackgroundProcessWrappers(t *testing.T) {
 	}
 	defer st.Close()
 
-	// Test StopBackgroundProcess with invalid path
-	err = daemon.StopBackgroundProcess(filepath.Join(tmpDir, "nonexistent.pid"))
+	// Test StopDaemon with invalid path
+	err = daemon.StopDaemon(filepath.Join(tmpDir, "nonexistent.pid"))
 	if err == nil {
-		t.Fatal("expected error from StopBackgroundProcess on missing pid file")
+		t.Fatal("expected error from StopDaemon on missing pid file")
 	}
 }

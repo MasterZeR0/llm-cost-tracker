@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/daemon"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
+	_ "github.com/mattn/go-sqlite3"
 	"gopkg.in/yaml.v3"
 )
 

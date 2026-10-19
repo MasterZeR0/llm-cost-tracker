@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/daemon"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers/vscdb"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // -------------------------------------------------------------
@@ -652,7 +652,7 @@ func TestResilience_CustomPricingIgnoredInSyncAll(t *testing.T) {
 	defer st.Close()
 
 	// Create a Windsurf file with cascade-base model
-	windsurfDir := filepath.Join(dir, "windsurf")
+	windsurfDir := filepath.Join(dir, "windsurf", "cascade")
 	if err := os.MkdirAll(windsurfDir, 0755); err != nil {
 		t.Fatal(err)
 	}

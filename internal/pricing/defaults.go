@@ -81,14 +81,14 @@ var DefaultModelPrices = map[string]ModelPrice{
 
 	// OpenAI GPT-4o Family
 	"gpt-4o": {
-		InputPerMTok:      2.50,
-		OutputPerMTok:     10.00,
-		CacheReadPerMTok:  1.25,
+		InputPerMTok:     2.50,
+		OutputPerMTok:    10.00,
+		CacheReadPerMTok: 1.25,
 	},
 	"gpt-4o-mini": {
-		InputPerMTok:      0.15,
-		OutputPerMTok:     0.60,
-		CacheReadPerMTok:  0.075,
+		InputPerMTok:     0.15,
+		OutputPerMTok:    0.60,
+		CacheReadPerMTok: 0.075,
 	},
 
 	// OpenAI GPT-4 Turbo & Base
@@ -103,85 +103,85 @@ var DefaultModelPrices = map[string]ModelPrice{
 
 	// OpenAI Reasoning / o-Series Models
 	"o1-mini*": {
-		InputPerMTok:      1.10,
-		OutputPerMTok:     4.40,
-		CacheReadPerMTok:  0.55,
+		InputPerMTok:     1.10,
+		OutputPerMTok:    4.40,
+		CacheReadPerMTok: 0.55,
 	},
 	"o1*": {
-		InputPerMTok:      15.00,
-		OutputPerMTok:     60.00,
-		CacheReadPerMTok:  7.50,
+		InputPerMTok:     15.00,
+		OutputPerMTok:    60.00,
+		CacheReadPerMTok: 7.50,
 	},
 	"o3-mini*": {
-		InputPerMTok:      1.10,
-		OutputPerMTok:     4.40,
-		CacheReadPerMTok:  0.55,
+		InputPerMTok:     1.10,
+		OutputPerMTok:    4.40,
+		CacheReadPerMTok: 0.55,
 	},
 	"o3-pro*": {
-		InputPerMTok:      20.00,
-		OutputPerMTok:     80.00,
+		InputPerMTok:  20.00,
+		OutputPerMTok: 80.00,
 	},
 	"o3*": {
-		InputPerMTok:      2.00,
-		OutputPerMTok:     8.00,
-		CacheReadPerMTok:  0.50,
+		InputPerMTok:     2.00,
+		OutputPerMTok:    8.00,
+		CacheReadPerMTok: 0.50,
 	},
 
 	// Google Gemini Family
 	"gemini-3*flash*": {
-		InputPerMTok:      0.10,
-		OutputPerMTok:     0.40,
+		InputPerMTok:  0.10,
+		OutputPerMTok: 0.40,
 	},
 	"gemini-3*pro*": {
-		InputPerMTok:      1.25,
-		OutputPerMTok:     5.00,
+		InputPerMTok:  1.25,
+		OutputPerMTok: 5.00,
 	},
 	"gemini-2*flash*": {
-		InputPerMTok:      0.10,
-		OutputPerMTok:     0.40,
+		InputPerMTok:  0.10,
+		OutputPerMTok: 0.40,
 	},
 	"gemini-1.5-flash*": {
-		InputPerMTok:      0.075,
-		OutputPerMTok:     0.30,
+		InputPerMTok:  0.075,
+		OutputPerMTok: 0.30,
 	},
 	"gemini-2.5-pro*": {
-		InputPerMTok:      1.25,
-		OutputPerMTok:     10.00,
-		CacheReadPerMTok:  0.125,
+		InputPerMTok:     1.25,
+		OutputPerMTok:    10.00,
+		CacheReadPerMTok: 0.125,
 	},
 	"gemini-2*pro*": {
-		InputPerMTok:      1.25,
-		OutputPerMTok:     5.00,
+		InputPerMTok:  1.25,
+		OutputPerMTok: 5.00,
 	},
 	"gemini-1.5-pro*": {
-		InputPerMTok:      1.25,
-		OutputPerMTok:     5.00,
+		InputPerMTok:  1.25,
+		OutputPerMTok: 5.00,
 	},
 
 	// DeepSeek Models
 	"deepseek-chat*": {
-		InputPerMTok:      0.14,
-		OutputPerMTok:     0.28,
-		CacheReadPerMTok:  0.014,
+		InputPerMTok:     0.14,
+		OutputPerMTok:    0.28,
+		CacheReadPerMTok: 0.014,
 	},
 	"deepseek-v3*": {
-		InputPerMTok:      0.14,
-		OutputPerMTok:     0.28,
-		CacheReadPerMTok:  0.014,
+		InputPerMTok:     0.14,
+		OutputPerMTok:    0.28,
+		CacheReadPerMTok: 0.014,
 	},
 	"deepseek-coder*": {
-		InputPerMTok:      0.14,
-		OutputPerMTok:     0.28,
-		CacheReadPerMTok:  0.014,
+		InputPerMTok:     0.14,
+		OutputPerMTok:    0.28,
+		CacheReadPerMTok: 0.014,
 	},
 	"deepseek-reasoner*": {
-		InputPerMTok:      0.55,
-		OutputPerMTok:     2.19,
-		CacheReadPerMTok:  0.14,
+		InputPerMTok:     0.55,
+		OutputPerMTok:    2.19,
+		CacheReadPerMTok: 0.14,
 	},
 	"deepseek-r1*": {
-		InputPerMTok:      0.55,
-		OutputPerMTok:     2.19,
-		CacheReadPerMTok:  0.14,
+		InputPerMTok:     0.55,
+		OutputPerMTok:    2.19,
+		CacheReadPerMTok: 0.14,
 	},
 }

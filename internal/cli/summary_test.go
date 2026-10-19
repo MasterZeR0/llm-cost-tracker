@@ -72,7 +72,6 @@ func TestRenderSummary_Empty(t *testing.T) {
 	}
 }
 
-
 func TestRenderSummary_WithBreakdown(t *testing.T) {
 	tmpDir := t.TempDir()
 	st, err := store.NewStore(filepath.Join(tmpDir, "breakdown.db"))

@@ -12,7 +12,6 @@ import (
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 )
 
-
 func TestEndToEndPipeline(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "e2e.db")
@@ -89,4 +88,3 @@ func TestEndToEndPipeline(t *testing.T) {
 		t.Errorf("expected Recent Sessions in sessions output: %s", sessOut)
 	}
 }
-

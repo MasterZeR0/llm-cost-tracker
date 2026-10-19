@@ -38,7 +38,9 @@ func (p *WindsurfParser) Discover(cfg config.ToolConfig) ([]DataSource, error) {
 			if base == "state.vscdb" {
 				sources = append(sources, DataSource{Path: path, Type: "sqlite"})
 			} else if strings.HasSuffix(base, ".json") {
-				sources = append(sources, DataSource{Path: path, Type: "json"})
+				if isCascadePath(path) {
+					sources = append(sources, DataSource{Path: path, Type: "json"})
+				}
 			}
 			return nil
 		})
@@ -127,6 +129,10 @@ func (p *WindsurfParser) parseJSON(source DataSource, state store.SyncState) ([]
 		return nil, state, err
 	}
 
+	if !isCascadeFile(source.Path, data) {
+		return nil, state, nil
+	}
+
 	var session cascadeSessionJSON
 	if err := json.Unmarshal(data, &session); err != nil {
 		// Try unmarshaling as a slice of steps
@@ -157,6 +163,13 @@ func (p *WindsurfParser) parseJSON(source DataSource, state store.SyncState) ([]
 	}
 	if len(steps) == 0 {
 		steps = session.Messages
+	}
+
+	if len(steps) == 0 && !isCascadeFile(source.Path, data) {
+		state.LastOffset = fi.Size()
+		modTime := fi.ModTime()
+		state.LastModified = &modTime
+		return nil, state, nil
 	}
 
 	lastStepIndex := int64(0)
@@ -428,4 +441,38 @@ func buildWindsurfRequest(sourcePath, sessionID, defaultModel string, stepIdx in
 		ToolCalls:      toolCalls,
 		ImportedAt:     time.Now().UTC(),
 	}
+}
+
+func isCascadePath(path string) bool {
+	base := filepath.Base(path)
+	lowerBase := strings.ToLower(base)
+	if strings.Contains(lowerBase, "cascade") {
+		return true
+	}
+	dir := filepath.Dir(path)
+	for {
+		part := strings.ToLower(filepath.Base(dir))
+		if part == "cascade" || strings.HasPrefix(part, "cascade") {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir || parent == "." || parent == "/" {
+			if parent != dir && (strings.ToLower(filepath.Base(parent)) == "cascade" || strings.HasPrefix(strings.ToLower(filepath.Base(parent)), "cascade")) {
+				return true
+			}
+			break
+		}
+		dir = parent
+	}
+	return false
+}
+
+func isCascadeFile(path string, data []byte) bool {
+	if isCascadePath(path) {
+		return true
+	}
+	lowerData := strings.ToLower(string(data))
+	return strings.Contains(lowerData, "cascade") ||
+		strings.Contains(lowerData, "session_id") ||
+		strings.Contains(lowerData, "steps")
 }

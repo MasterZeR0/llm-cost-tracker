@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
+	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type AGYParser struct{}
@@ -63,7 +63,6 @@ type agyTranscriptEvent struct {
 	ToolCalls       []agyToolCall `json:"tool_calls,omitempty"`
 	ExitCode        *int          `json:"exit_code,omitempty"`
 }
-
 
 type agyStepTokens struct {
 	InputTokens     int64
@@ -236,38 +235,38 @@ func (p *AGYParser) Parse(source DataSource, state store.SyncState) ([]store.Req
 				} else {
 					prevTurnTs = parsedEvtTs
 					if len(requests) > 0 {
-					// Correlate execution events with preceding request's tool calls
-					isErr := evt.Status == "ERROR" || (evt.ExitCode != nil && *evt.ExitCode != 0)
-					if isErr {
-						lastReq := &requests[len(requests)-1]
-						targetTool := strings.ToLower(evt.Type)
-						marked := false
-						// 1. First try matching by tool name
-						for i := range lastReq.ToolCalls {
-							if strings.ToLower(lastReq.ToolCalls[i].ToolName) == targetTool && lastReq.ToolCalls[i].Status != "error" {
-								lastReq.ToolCalls[i].Status = "error"
-								lastReq.ToolErrorCount++
-								marked = true
-								break
-							}
-						}
-						// 2. Fallback to first non-error tool call
-						if !marked {
+						// Correlate execution events with preceding request's tool calls
+						isErr := evt.Status == "ERROR" || (evt.ExitCode != nil && *evt.ExitCode != 0)
+						if isErr {
+							lastReq := &requests[len(requests)-1]
+							targetTool := strings.ToLower(evt.Type)
+							marked := false
+							// 1. First try matching by tool name
 							for i := range lastReq.ToolCalls {
-								if lastReq.ToolCalls[i].Status != "error" {
+								if strings.ToLower(lastReq.ToolCalls[i].ToolName) == targetTool && lastReq.ToolCalls[i].Status != "error" {
 									lastReq.ToolCalls[i].Status = "error"
 									lastReq.ToolErrorCount++
 									marked = true
 									break
 								}
 							}
-						}
-						if !marked {
-							lastReq.ToolErrorCount++
+							// 2. Fallback to first non-error tool call
+							if !marked {
+								for i := range lastReq.ToolCalls {
+									if lastReq.ToolCalls[i].Status != "error" {
+										lastReq.ToolCalls[i].Status = "error"
+										lastReq.ToolErrorCount++
+										marked = true
+										break
+									}
+								}
+							}
+							if !marked {
+								lastReq.ToolErrorCount++
+							}
 						}
 					}
 				}
-			}
 
 			}
 		}
@@ -749,4 +748,3 @@ func BackfillAGYLatencies(trackerDB *sql.DB, conversationsDir string) (int, erro
 
 	return updatedCount, nil
 }
-

@@ -66,6 +66,89 @@ type copilotCLIEntry struct {
 }
 
 func (p *CopilotCLIParser) Parse(source DataSource, state store.SyncState) ([]store.Request, store.SyncState, error) {
+	if source.Type == "json" || strings.HasSuffix(source.Path, ".json") {
+		return p.parseJSON(source, state)
+	}
+	return p.parseJSONL(source, state)
+}
+
+func (p *CopilotCLIParser) parseJSON(source DataSource, state store.SyncState) ([]store.Request, store.SyncState, error) {
+	fi, err := os.Stat(source.Path)
+	if err != nil {
+		return nil, state, err
+	}
+
+	// Truncation detection: if file shrank below LastOffset, reset offset
+	if state.LastOffset > 0 && fi.Size() < state.LastOffset {
+		state.LastOffset = 0
+		state.LastRowID = ""
+	}
+
+	// If offset matches file size, no new data has been written
+	if state.LastOffset > 0 && fi.Size() == state.LastOffset {
+		return nil, state, nil
+	}
+
+	if fi.Size() == 0 {
+		state.LastOffset = 0
+		modTime := fi.ModTime()
+		state.LastModified = &modTime
+		return nil, state, nil
+	}
+
+	data, err := os.ReadFile(source.Path)
+	if err != nil {
+		return nil, state, err
+	}
+
+	trimmed := strings.TrimSpace(string(data))
+	if len(trimmed) == 0 {
+		state.LastOffset = fi.Size()
+		modTime := fi.ModTime()
+		state.LastModified = &modTime
+		return nil, state, nil
+	}
+
+	var entries []copilotCLIEntry
+	if err := json.Unmarshal([]byte(trimmed), &entries); err != nil {
+		var single copilotCLIEntry
+		if errSingle := json.Unmarshal([]byte(trimmed), &single); errSingle != nil {
+			return nil, state, fmt.Errorf("unmarshal copilot_cli json %s: %w", source.Path, err)
+		}
+		entries = []copilotCLIEntry{single}
+	}
+
+	lastStepIndex := int64(0)
+	if state.LastOffset > 0 && state.LastRowID != "" {
+		lastStepIndex, _ = strconv.ParseInt(state.LastRowID, 10, 64)
+	}
+
+	pricingEngine := pricing.NewEngine(nil)
+	var requests []store.Request
+
+	for i, entry := range entries {
+		stepIdx := int64(i + 1)
+		if stepIdx <= lastStepIndex {
+			continue
+		}
+
+		req := buildCopilotCLIRequest(source.Path, entry, stepIdx, pricingEngine)
+		requests = append(requests, req)
+
+		if stepIdx > lastStepIndex {
+			lastStepIndex = stepIdx
+		}
+	}
+
+	state.LastOffset = fi.Size()
+	state.LastRowID = strconv.FormatInt(lastStepIndex, 10)
+	modTime := fi.ModTime()
+	state.LastModified = &modTime
+
+	return requests, state, nil
+}
+
+func (p *CopilotCLIParser) parseJSONL(source DataSource, state store.SyncState) ([]store.Request, store.SyncState, error) {
 	file, err := os.Open(source.Path)
 	if err != nil {
 		return nil, state, err
@@ -129,103 +212,7 @@ func (p *CopilotCLIParser) Parse(source DataSource, state store.SyncState) ([]st
 			lastStepIndex++
 			stepIdx := lastStepIndex
 
-			sessionID := entry.SessionID
-			if sessionID == "" {
-				sessionID = strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path))
-			}
-
-			model := entry.Model
-			if model == "" {
-				model = "gpt-4o"
-			}
-
-			prompt := entry.Query
-			if prompt == "" {
-				prompt = entry.Prompt
-			}
-
-			resp := entry.Explanation
-			if entry.Suggestion != "" {
-				if resp != "" {
-					resp = fmt.Sprintf("%s\n\nSuggested command: %s", resp, entry.Suggestion)
-				} else {
-					resp = entry.Suggestion
-				}
-			} else if entry.Command != "" {
-				if resp != "" {
-					resp = fmt.Sprintf("%s\n\nCommand: %s", resp, entry.Command)
-				} else {
-					resp = entry.Command
-				}
-			} else if entry.Response != "" {
-				if resp == "" {
-					resp = entry.Response
-				}
-			}
-
-			inTokens, outTokens := tokenestimator.EstimateTokens(prompt, resp)
-
-			var costUSD *float64
-			if entry.CostUSD != nil {
-				costUSD = entry.CostUSD
-			} else {
-				cost, ok := pricingEngine.CalculateCost(model, inTokens, outTokens, 0, 0)
-				if ok {
-					costUSD = cost
-				}
-			}
-
-			var latencyMS *int64
-			if entry.DurationMS != nil {
-				latencyMS = entry.DurationMS
-			} else if entry.LatencyMS != nil {
-				latencyMS = entry.LatencyMS
-			}
-
-			ts := time.Now().UTC()
-			if entry.Timestamp != "" {
-				if parsed, parseErr := time.Parse(time.RFC3339Nano, entry.Timestamp); parseErr == nil {
-					ts = parsed.UTC()
-				} else if parsed, parseErr := time.Parse(time.RFC3339, entry.Timestamp); parseErr == nil {
-					ts = parsed.UTC()
-				}
-			}
-
-			reqID := fmt.Sprintf("copilot_cli:%s:%d", sessionID, stepIdx)
-
-			var toolCalls []store.ToolCall
-			if entry.CommandType == "suggest" || entry.Suggestion != "" {
-				toolCalls = append(toolCalls, store.ToolCall{
-					ID:        fmt.Sprintf("%s:tool:0", reqID),
-					RequestID: reqID,
-					SessionID: sessionID,
-					ToolName:  "suggest_command",
-					Status:    "success",
-					CreatedAt: ts,
-				})
-			}
-
-			req := store.Request{
-				ID:            reqID,
-				Tool:          "copilot_cli",
-				SessionID:     sessionID,
-				Timestamp:     ts,
-				Model:         model,
-				InputTokens:   inTokens,
-				OutputTokens:  outTokens,
-				TotalTokens:   inTokens + outTokens,
-				CostUSD:       costUSD,
-				LatencyMS:     latencyMS,
-				Status:        "estimated",
-				PromptText:    prompt,
-				ResponseText:  resp,
-				SourceFile:    source.Path,
-				StepIndex:     stepIdx,
-				ToolCallCount: len(toolCalls),
-				ToolCalls:     toolCalls,
-				ImportedAt:    time.Now().UTC(),
-			}
-
+			req := buildCopilotCLIRequest(source.Path, entry, stepIdx, pricingEngine)
 			requests = append(requests, req)
 		}
 
@@ -240,4 +227,103 @@ func (p *CopilotCLIParser) Parse(source DataSource, state store.SyncState) ([]st
 	state.LastModified = &modTime
 
 	return requests, state, nil
+}
+
+func buildCopilotCLIRequest(sourcePath string, entry copilotCLIEntry, stepIdx int64, pricingEngine *pricing.Engine) store.Request {
+	sessionID := entry.SessionID
+	if sessionID == "" {
+		sessionID = strings.TrimSuffix(filepath.Base(sourcePath), filepath.Ext(sourcePath))
+	}
+
+	model := entry.Model
+	if model == "" {
+		model = "gpt-4o"
+	}
+
+	prompt := entry.Query
+	if prompt == "" {
+		prompt = entry.Prompt
+	}
+
+	resp := entry.Explanation
+	if entry.Suggestion != "" {
+		if resp != "" {
+			resp = fmt.Sprintf("%s\n\nSuggested command: %s", resp, entry.Suggestion)
+		} else {
+			resp = entry.Suggestion
+		}
+	} else if entry.Command != "" {
+		if resp != "" {
+			resp = fmt.Sprintf("%s\n\nCommand: %s", resp, entry.Command)
+		} else {
+			resp = entry.Command
+		}
+	} else if entry.Response != "" {
+		if resp == "" {
+			resp = entry.Response
+		}
+	}
+
+	inTokens, outTokens := tokenestimator.EstimateTokens(prompt, resp)
+
+	var costUSD *float64
+	if entry.CostUSD != nil {
+		costUSD = entry.CostUSD
+	} else {
+		cost, ok := pricingEngine.CalculateCost(model, inTokens, outTokens, 0, 0)
+		if ok {
+			costUSD = cost
+		}
+	}
+
+	var latencyMS *int64
+	if entry.DurationMS != nil {
+		latencyMS = entry.DurationMS
+	} else if entry.LatencyMS != nil {
+		latencyMS = entry.LatencyMS
+	}
+
+	ts := time.Now().UTC()
+	if entry.Timestamp != "" {
+		if parsed, parseErr := time.Parse(time.RFC3339Nano, entry.Timestamp); parseErr == nil {
+			ts = parsed.UTC()
+		} else if parsed, parseErr := time.Parse(time.RFC3339, entry.Timestamp); parseErr == nil {
+			ts = parsed.UTC()
+		}
+	}
+
+	reqID := fmt.Sprintf("copilot_cli:%s:%d", sessionID, stepIdx)
+
+	var toolCalls []store.ToolCall
+	if entry.CommandType == "suggest" || entry.Suggestion != "" {
+		toolCalls = append(toolCalls, store.ToolCall{
+			ID:        fmt.Sprintf("%s:tool:0", reqID),
+			RequestID: reqID,
+			SessionID: sessionID,
+			ToolName:  "suggest_command",
+			Status:    "success",
+			CreatedAt: ts,
+		})
+	}
+
+	return store.Request{
+		ID:            reqID,
+		Tool:          "copilot_cli",
+		SessionID:     sessionID,
+		Timestamp:     ts,
+		Model:         model,
+		InputTokens:   inTokens,
+		OutputTokens:  outTokens,
+		TotalTokens:   inTokens + outTokens,
+		CostUSD:       costUSD,
+		LatencyMS:     latencyMS,
+		Status:        "estimated",
+		PromptText:    prompt,
+		ResponseText:  resp,
+		SourceFile:    sourcePath,
+		StepIndex:     stepIdx,
+		ToolCallCount: len(toolCalls),
+		ToolCalls:     toolCalls,
+		ImportedAt:    time.Now().UTC(),
+	}
 }

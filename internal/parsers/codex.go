@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
+	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type CodexParser struct{}

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
-	"github.com/MasterZeR0/llm-cost-tracker/internal/parsers"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 	"github.com/spf13/cobra"
@@ -46,7 +45,6 @@ func init() {
 	rootCmd.AddCommand(toolsCmd)
 }
 
-
 func initConfig() {
 	var err error
 	cfg, err = config.LoadConfig(cfgPath)
@@ -63,11 +61,4 @@ func initConfig() {
 	}
 
 	engine = pricing.NewEngine(nil)
-	if agyCfg, ok := cfg.Tools["agy"]; ok && agyCfg.Enabled && len(agyCfg.Paths) > 0 {
-		brainPath := config.ExpandHome(agyCfg.Paths[0])
-		convDir := filepath.Join(filepath.Dir(brainPath), "conversations")
-		if _, statErr := os.Stat(convDir); statErr == nil {
-			_, _ = parsers.BackfillAGYLatencies(st.DB(), convDir)
-		}
-	}
 }

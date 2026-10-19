@@ -70,4 +70,3 @@ CREATE INDEX IF NOT EXISTS idx_requests_model ON requests(model);
 CREATE INDEX IF NOT EXISTS idx_requests_tool_timestamp ON requests(tool, timestamp);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_request ON tool_calls(request_id);
 `
-

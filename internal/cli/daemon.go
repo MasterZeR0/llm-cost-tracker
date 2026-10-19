@@ -13,9 +13,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var daemonForeground bool
+
 var daemonCmd = &cobra.Command{
 	Use:   "daemon",
 	Short: "Manage the background watcher daemon",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return daemonStartCmd.RunE(cmd, args)
+	},
 }
 
 var daemonStartCmd = &cobra.Command{
@@ -60,6 +65,7 @@ var daemonStopCmd = &cobra.Command{
 }
 
 func init() {
+	daemonCmd.PersistentFlags().BoolVarP(&daemonForeground, "foreground", "f", false, "run daemon in foreground")
 	daemonCmd.AddCommand(daemonStartCmd)
 	daemonCmd.AddCommand(daemonStopCmd)
 }

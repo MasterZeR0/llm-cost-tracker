@@ -412,4 +412,3 @@ func TestDashboardAPI_AnalyticsAndSessions(t *testing.T) {
 		t.Fatalf("expected 404 for wildcard '%%' session id, got %d", w.Code)
 	}
 }
-

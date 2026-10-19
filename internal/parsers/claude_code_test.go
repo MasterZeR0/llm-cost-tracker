@@ -46,6 +46,9 @@ func TestClaudeCodeParser_Parse(t *testing.T) {
 	if first.CacheReadTokens != 300 {
 		t.Errorf("cache read mismatch: %d", first.CacheReadTokens)
 	}
+	if first.TotalTokens != 1585 {
+		t.Errorf("total tokens mismatch: expected 1585 (1200+85+300), got %d", first.TotalTokens)
+	}
 	if newState.LastOffset <= 0 {
 		t.Errorf("expected positive offset advance, got %d", newState.LastOffset)
 	}
@@ -299,3 +302,40 @@ func TestClaudeCodeParser_ToolCallsAndErrors(t *testing.T) {
 	}
 }
 
+func TestClaudeCodeParser_TotalTokensWithCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "cache_tokens.jsonl")
+
+	line := `{"type":"assistant","costUSD":0.03,"durationMs":1000,"message":{"model":"claude-3-5-sonnet","role":"assistant","usage":{"input_tokens":1000,"output_tokens":200,"cache_read_input_tokens":500,"cache_creation_input_tokens":300}}}` + "\n"
+	if err := os.WriteFile(logFile, []byte(line), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	parser := &parsers.ClaudeCodeParser{}
+	state := store.SyncState{SourcePath: logFile, Tool: "claude_code", LastOffset: 0}
+	reqs, _, err := parser.Parse(parsers.DataSource{Path: logFile, Type: "jsonl"}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(reqs) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(reqs))
+	}
+
+	req := reqs[0]
+	if req.InputTokens != 1000 {
+		t.Errorf("expected 1000 input tokens, got %d", req.InputTokens)
+	}
+	if req.OutputTokens != 200 {
+		t.Errorf("expected 200 output tokens, got %d", req.OutputTokens)
+	}
+	if req.CacheReadTokens != 500 {
+		t.Errorf("expected 500 cache read tokens, got %d", req.CacheReadTokens)
+	}
+	if req.CacheWriteTokens != 300 {
+		t.Errorf("expected 300 cache write tokens, got %d", req.CacheWriteTokens)
+	}
+	expectedTotal := int64(1000 + 200 + 500 + 300) // 2000
+	if req.TotalTokens != expectedTotal {
+		t.Errorf("expected %d total tokens including cache, got %d", expectedTotal, req.TotalTokens)
+	}
+}

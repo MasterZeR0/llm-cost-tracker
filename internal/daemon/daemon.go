@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/pricing"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
+	"github.com/fsnotify/fsnotify"
 )
 
 type Daemon struct {
@@ -153,6 +153,15 @@ func (d *Daemon) Start(ctx context.Context) error {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
+	const debounceDuration = 500 * time.Millisecond
+	var debounceTimer *time.Timer
+	var debounceCh <-chan time.Time
+	defer func() {
+		if debounceTimer != nil {
+			debounceTimer.Stop()
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -160,6 +169,21 @@ func (d *Daemon) Start(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			slog.Debug("running scheduled poll sync")
+			if debounceTimer != nil {
+				if !debounceTimer.Stop() {
+					select {
+					case <-debounceTimer.C:
+					default:
+					}
+				}
+				debounceTimer = nil
+				debounceCh = nil
+			}
+			_, _ = SyncAll(d.cfg, d.store, d.engine)
+		case <-debounceCh:
+			slog.Debug("debounced fs sync triggering")
+			debounceTimer = nil
+			debounceCh = nil
 			_, _ = SyncAll(d.cfg, d.store, d.engine)
 		case event, ok := <-eventsCh:
 			if !ok {
@@ -174,8 +198,19 @@ func (d *Daemon) Start(ctx context.Context) error {
 				}
 			}
 			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
-				slog.Debug("fs event detected, syncing", "file", event.Name)
-				_, _ = SyncAll(d.cfg, d.store, d.engine)
+				slog.Debug("fs event detected, debouncing sync", "file", event.Name)
+				if debounceTimer == nil {
+					debounceTimer = time.NewTimer(debounceDuration)
+					debounceCh = debounceTimer.C
+				} else {
+					if !debounceTimer.Stop() {
+						select {
+						case <-debounceTimer.C:
+						default:
+						}
+					}
+					debounceTimer.Reset(debounceDuration)
+				}
 			}
 		case wErr, ok := <-errorsCh:
 			if !ok {
@@ -232,15 +267,4 @@ func StopDaemon(pidPath string) error {
 	}
 
 	return nil
-}
-
-// StartBackgroundProcess starts the daemon synchronously with a background context.
-func StartBackgroundProcess(cfg *config.Config, st *store.Store, engine *pricing.Engine) error {
-	d := NewDaemon(cfg, st, engine)
-	return d.Start(context.Background())
-}
-
-// StopBackgroundProcess sends SIGTERM to the daemon PID stored at pidPath.
-func StopBackgroundProcess(pidPath string) error {
-	return StopDaemon(pidPath)
 }

@@ -184,7 +184,7 @@ func TestStore_MigrationAndToolCalls(t *testing.T) {
 		},
 	}
 
-	if err := st.InsertRequestsWithTools([]store.Request{req}); err != nil {
+	if _, err := st.InsertRequests([]store.Request{req}); err != nil {
 		t.Fatalf("failed to insert request with tools: %v", err)
 	}
 
@@ -198,3 +198,59 @@ func TestStore_MigrationAndToolCalls(t *testing.T) {
 	}
 }
 
+func TestStore_SeedPricingCustomNotOverwritten(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_pricing.db")
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer st.Close()
+
+	// Update an existing model pricing to a custom value
+	_, err = st.DB().Exec(`
+		UPDATE pricing SET input_per_mtok = 99.99, source = 'custom'
+		WHERE model_pattern = 'claude-3-5-sonnet*'
+	`)
+	if err != nil {
+		t.Fatalf("failed to update pricing: %v", err)
+	}
+
+	// Also insert a custom model pattern
+	_, err = st.DB().Exec(`
+		INSERT INTO pricing (model_pattern, input_per_mtok, output_per_mtok, cache_read_per_mtok, cache_write_per_mtok, effective_date, source)
+		VALUES ('my-custom-model', 12.34, 56.78, 1.0, 2.0, '2026-01-01', 'custom')
+	`)
+	if err != nil {
+		t.Fatalf("failed to insert custom model: %v", err)
+	}
+
+	// Re-open store to trigger seedPricing again on existing database
+	st.Close()
+	st2, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("failed to reopen store: %v", err)
+	}
+	defer st2.Close()
+
+	// Check that custom pricing for claude-3-5-sonnet* was not overwritten
+	var sonnetPrice float64
+	var sonnetSource string
+	err = st2.DB().QueryRow(`SELECT input_per_mtok, source FROM pricing WHERE model_pattern = 'claude-3-5-sonnet*'`).Scan(&sonnetPrice, &sonnetSource)
+	if err != nil {
+		t.Fatalf("failed to query pricing: %v", err)
+	}
+	if sonnetPrice != 99.99 || sonnetSource != "custom" {
+		t.Fatalf("expected custom price 99.99 and source 'custom', got %f and %s", sonnetPrice, sonnetSource)
+	}
+
+	// Check that custom model remains intact
+	var customPrice float64
+	err = st2.DB().QueryRow(`SELECT input_per_mtok FROM pricing WHERE model_pattern = 'my-custom-model'`).Scan(&customPrice)
+	if err != nil {
+		t.Fatalf("failed to query custom pricing: %v", err)
+	}
+	if customPrice != 12.34 {
+		t.Fatalf("expected custom price 12.34, got %f", customPrice)
+	}
+}

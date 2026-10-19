@@ -108,4 +108,3 @@ type OverviewStats struct {
 	TotalToolErrors    int64   `json:"total_tool_errors"`
 	TotalSubagents     int64   `json:"total_subagents"`
 }
-

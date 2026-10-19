@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
+	"github.com/google/uuid"
 )
 
 type ClaudeCodeParser struct{}
@@ -67,9 +67,9 @@ type claudeAssistantEvent struct {
 }
 
 type claudeGenericEvent struct {
-	Type       string `json:"type"`
-	IsError    bool   `json:"is_error,omitempty"`
-	ToolUseID  string `json:"tool_use_id,omitempty"`
+	Type      string `json:"type"`
+	IsError   bool   `json:"is_error,omitempty"`
+	ToolUseID string `json:"tool_use_id,omitempty"`
 }
 
 func (p *ClaudeCodeParser) Parse(source DataSource, state store.SyncState) ([]store.Request, store.SyncState, error) {
@@ -160,7 +160,7 @@ func (p *ClaudeCodeParser) Parse(source DataSource, state store.SyncState) ([]st
 					OutputTokens:     evt.Message.Usage.OutputTokens,
 					CacheReadTokens:  evt.Message.Usage.CacheReadInputTokens,
 					CacheWriteTokens: evt.Message.Usage.CacheCreationInputTokens,
-					TotalTokens:      evt.Message.Usage.InputTokens + evt.Message.Usage.OutputTokens,
+					TotalTokens:      evt.Message.Usage.InputTokens + evt.Message.Usage.OutputTokens + evt.Message.Usage.CacheReadInputTokens + evt.Message.Usage.CacheCreationInputTokens,
 					CostUSD:          evt.CostUSD,
 					LatencyMS:        evt.DurationMS,
 					Status:           status,
@@ -194,7 +194,6 @@ func (p *ClaudeCodeParser) Parse(source DataSource, state store.SyncState) ([]st
 			break
 		}
 	}
-
 
 	state.LastOffset = currentOffset
 	return requests, state, nil
