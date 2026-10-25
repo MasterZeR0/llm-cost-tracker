@@ -53,9 +53,27 @@
           <span id="turns-per-session" class="sub-metric">- turns/sess</span>
         </div>
       </div>
+      <div class="card">
+        <h3>Avoidable Waste</h3>
+        <div class="metric-row">
+          <p id="avoidable-waste" class="metric metric-waste">$0.00</p>
+          <span id="avoidable-tokens" class="sub-metric">0 wasted tokens</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Avg Session Health</h3>
+        <div class="metric-row">
+          <p id="avg-health" class="metric">-</p>
+          <span id="flagged-sessions" class="sub-metric">0 flagged</span>
+        </div>
+      </div>
     </div>
 
     <div class="charts-grid">
+      <div class="chart-box">
+        <h3>Avoidable Waste by Category</h3>
+        <canvas id="wasteCategoryChart"></canvas>
+      </div>
       <div class="chart-box">
         <h3>Cost Over Time</h3>
         <canvas id="costTimeChart"></canvas>
@@ -137,6 +155,19 @@
         </div>
         <div class="modal-body">
           <div id="modal-summary" class="modal-summary-grid"></div>
+
+          <!-- Context Growth Trajectory & Waste Findings -->
+          <div class="waste-trajectory-section">
+            <div class="section-header">
+              <h4>Context Growth Trajectory &amp; Waste Findings</h4>
+              <div id="modal-session-health" class="session-health-tag"></div>
+            </div>
+            <div class="trajectory-chart-container">
+              <canvas id="sessionTrajectoryChart"></canvas>
+            </div>
+            <div id="modal-waste-findings" class="waste-findings-container"></div>
+          </div>
+
           <h4>Turns Drilldown</h4>
           <div style="overflow-x: auto;">
             <table>
@@ -151,6 +182,7 @@
                   <th>Cost</th>
                   <th>Latency</th>
                   <th>Tool Calls</th>
+                  <th>Waste Status</th>
                 </tr>
               </thead>
               <tbody id="modal-turns-table"></tbody>

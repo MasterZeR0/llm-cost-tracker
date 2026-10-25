@@ -48,11 +48,11 @@ type ModelUsagePoint struct {
 func periodClause(period string) string {
 	switch period {
 	case "today":
-		return "WHERE timestamp >= date('now', 'localtime', 'start of day')"
+		return "WHERE datetime(timestamp, 'localtime') >= datetime('now', 'localtime', 'start of day')"
 	case "week":
-		return "WHERE timestamp >= date('now', 'localtime', '-7 days')"
+		return "WHERE datetime(timestamp, 'localtime') >= datetime('now', 'localtime', '-7 days')"
 	case "month":
-		return "WHERE timestamp >= date('now', 'localtime', '-30 days')"
+		return "WHERE datetime(timestamp, 'localtime') >= datetime('now', 'localtime', '-30 days')"
 	default:
 		return ""
 	}
@@ -128,7 +128,7 @@ func (s *Store) getPricingEngine() *pricing.Engine {
 func (s *Store) calculateCacheSavings(whereClause string) (float64, error) {
 	rClause := whereClause
 	if rClause != "" {
-		rClause = strings.Replace(rClause, "WHERE timestamp", "WHERE r.timestamp", 1)
+		rClause = strings.Replace(rClause, "timestamp", "r.timestamp", 1)
 	}
 	query := fmt.Sprintf(`
 		SELECT coalesce(r.model, ''), coalesce(sum(r.cache_read_tokens), 0)
@@ -687,7 +687,7 @@ func (s *Store) GetToolCallStats(period string) ([]ToolCallStat, error) {
 	clause := periodClause(period)
 	rClause := clause
 	if rClause != "" {
-		rClause = strings.Replace(rClause, "WHERE timestamp", "WHERE r.timestamp", 1)
+		rClause = strings.Replace(rClause, "timestamp", "r.timestamp", 1)
 	}
 
 	query := fmt.Sprintf(`
@@ -716,4 +716,138 @@ func (s *Store) GetToolCallStats(period string) ([]ToolCallStat, error) {
 		}
 	}
 	return stats, nil
+}
+
+func (s *Store) GetPeriodSessionDetails(period string) ([]SessionDetail, error) {
+	summaries, err := s.GetSessionSummaries(period, 10000)
+	if err != nil {
+		return nil, err
+	}
+	if len(summaries) == 0 {
+		return []SessionDetail{}, nil
+	}
+
+	sessionIDs := make([]string, 0, len(summaries))
+	seen := make(map[string]bool, len(summaries))
+	for _, sm := range summaries {
+		if !seen[sm.SessionID] {
+			seen[sm.SessionID] = true
+			sessionIDs = append(sessionIDs, sm.SessionID)
+		}
+	}
+
+	toolCallsByReq := make(map[string][]ToolCall)
+	turnsBySession := make(map[string][]Request)
+
+	const chunkSize = 500
+	for i := 0; i < len(sessionIDs); i += chunkSize {
+		end := i + chunkSize
+		if end > len(sessionIDs) {
+			end = len(sessionIDs)
+		}
+		chunk := sessionIDs[i:end]
+
+		placeholders := make([]string, len(chunk))
+		args := make([]interface{}, len(chunk))
+		for j, sid := range chunk {
+			placeholders[j] = "?"
+			args[j] = sid
+		}
+		inClause := strings.Join(placeholders, ",")
+
+		tcQuery := fmt.Sprintf(`
+			SELECT id, request_id, session_id, tool_name, coalesce(status, 'success'), created_at
+			FROM tool_calls
+			WHERE session_id IN (%s)
+			ORDER BY created_at ASC
+		`, inClause)
+
+		tcRows, err := s.db.Query(tcQuery, args...)
+		if err == nil {
+			for tcRows.Next() {
+				var tc ToolCall
+				var tcTimeStr string
+				if err := tcRows.Scan(&tc.ID, &tc.RequestID, &tc.SessionID, &tc.ToolName, &tc.Status, &tcTimeStr); err == nil {
+					if t, err := time.Parse(time.RFC3339Nano, tcTimeStr); err == nil {
+						tc.CreatedAt = t
+					} else if t, err := time.Parse(time.RFC3339, tcTimeStr); err == nil {
+						tc.CreatedAt = t
+					}
+					toolCallsByReq[tc.RequestID] = append(toolCallsByReq[tc.RequestID], tc)
+				}
+			}
+			tcRows.Close()
+		}
+
+		reqQuery := fmt.Sprintf(`
+			SELECT 
+				id, tool, coalesce(session_id, ''), timestamp, coalesce(model, 'unknown'),
+				input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens,
+				cost_usd, latency_ms, coalesce(status, 'success'),
+				step_index, tool_call_count, tool_error_count, subagent_call_count
+			FROM requests
+			WHERE session_id IN (%s)
+			ORDER BY session_id, step_index ASC, timestamp ASC
+		`, inClause)
+
+		rRows, err := s.db.Query(reqQuery, args...)
+		if err != nil {
+			return nil, err
+		}
+
+		for rRows.Next() {
+			var r Request
+			var tsStr string
+			var cost sql.NullFloat64
+			var latency sql.NullInt64
+
+			err := rRows.Scan(
+				&r.ID, &r.Tool, &r.SessionID, &tsStr, &r.Model,
+				&r.InputTokens, &r.OutputTokens, &r.CacheReadTokens, &r.CacheWriteTokens, &r.TotalTokens,
+				&cost, &latency, &r.Status,
+				&r.StepIndex, &r.ToolCallCount, &r.ToolErrorCount, &r.SubagentCallCount,
+			)
+			if err != nil {
+				rRows.Close()
+				return nil, err
+			}
+
+			if t, err := time.Parse(time.RFC3339Nano, tsStr); err == nil {
+				r.Timestamp = t
+			} else if t, err := time.Parse(time.RFC3339, tsStr); err == nil {
+				r.Timestamp = t
+			}
+			if cost.Valid {
+				r.CostUSD = &cost.Float64
+			}
+			if latency.Valid {
+				r.LatencyMS = &latency.Int64
+			}
+
+			if tcs, ok := toolCallsByReq[r.ID]; ok {
+				r.ToolCalls = tcs
+			}
+
+			turnsBySession[r.SessionID] = append(turnsBySession[r.SessionID], r)
+		}
+		if err := rRows.Err(); err != nil {
+			rRows.Close()
+			return nil, err
+		}
+		rRows.Close()
+	}
+
+	details := make([]SessionDetail, 0, len(summaries))
+	for _, sm := range summaries {
+		turns := turnsBySession[sm.SessionID]
+		if turns == nil {
+			turns = make([]Request, 0)
+		}
+		details = append(details, SessionDetail{
+			Summary: sm,
+			Turns:   turns,
+		})
+	}
+
+	return details, nil
 }

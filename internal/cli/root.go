@@ -43,6 +43,22 @@ func init() {
 	rootCmd.AddCommand(sessionsCmd)
 	rootCmd.AddCommand(dashboardCmd)
 	rootCmd.AddCommand(toolsCmd)
+	rootCmd.AddCommand(wasteCmd)
+}
+
+// SetStoreForTesting overrides the database store instance for tests.
+func SetStoreForTesting(s *store.Store) {
+	st = s
+}
+
+// SetConfigForTesting overrides the configuration instance for tests.
+func SetConfigForTesting(c *config.Config) {
+	cfg = c
+}
+
+// GetRootCmdForTesting returns the rootCmd for CLI test suites.
+func GetRootCmdForTesting() *cobra.Command {
+	return rootCmd
 }
 
 func initConfig() {

@@ -3,10 +3,10 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/MasterZeR0/llm-cost-tracker/internal/analyzer"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -36,9 +36,9 @@ var sessionsCmd = &cobra.Command{
 			if sessionID == "" {
 				return fmt.Errorf("session ID cannot be empty")
 			}
-			return RenderSessionDetail(os.Stdout, st, sessionID)
+			return runSessionDetail(cmd.OutOrStdout(), st, sessionID)
 		}
-		return RenderSessionsList(os.Stdout, st, sessionsPeriodFlag, sessionsLimitFlag)
+		return RenderSessionsList(cmd.OutOrStdout(), st, sessionsPeriodFlag, sessionsLimitFlag)
 	},
 }
 
@@ -134,7 +134,41 @@ func RenderSessionsList(w io.Writer, s *store.Store, period string, limit int) e
 	return nil
 }
 
-func RenderSessionDetail(w io.Writer, s *store.Store, sessionID string) error {
+func renderBoxWrapped(w io.Writer, prefix, text string, innerWidth int) {
+	fullText := prefix + text
+	if len([]rune(fullText)) <= innerWidth-2 {
+		renderBoxLine(w, fullText, innerWidth)
+		return
+	}
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		renderBoxLine(w, prefix, innerWidth)
+		return
+	}
+	curr := prefix
+	indent := "     "
+	for _, word := range words {
+		testLine := curr + " " + word
+		if curr == prefix {
+			testLine = curr + word
+		}
+		if len([]rune(testLine)) <= innerWidth-2 {
+			curr = testLine
+		} else {
+			renderBoxLine(w, curr, innerWidth)
+			curr = indent + word
+		}
+	}
+	if curr != "" && curr != indent {
+		renderBoxLine(w, curr, innerWidth)
+	}
+}
+
+func runSessionDetail(w io.Writer, s *store.Store, sessionID string, customCfg ...analyzer.Config) error {
+	return RenderSessionDetail(w, s, sessionID, customCfg...)
+}
+
+func RenderSessionDetail(w io.Writer, s *store.Store, sessionID string, customCfg ...analyzer.Config) error {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return fmt.Errorf("session ID cannot be empty")
@@ -144,6 +178,16 @@ func RenderSessionDetail(w io.Writer, s *store.Store, sessionID string) error {
 	if err != nil {
 		return fmt.Errorf("session %q not found", sessionID)
 	}
+
+	var analyzerCfg analyzer.Config
+	if len(customCfg) > 0 {
+		analyzerCfg = customCfg[0]
+	} else if cfg != nil {
+		analyzerCfg = analyzer.FromWasteMonitoringConfig(cfg.WasteMonitoring)
+	} else {
+		analyzerCfg = analyzer.DefaultConfig()
+	}
+	analysis := analyzer.AnalyzeSession(*detail, analyzerCfg)
 
 	sm := detail.Summary
 	durStr := formatDuration(sm.DurationSeconds)
@@ -160,6 +204,22 @@ func RenderSessionDetail(w io.Writer, s *store.Store, sessionID string) error {
 	}
 	renderBoxLine(w, fmt.Sprintf(" Tokens: %-9d (Cache: %d Hit, %d Miss, %.1f%%) | Tools: %d%s",
 		sm.TotalTokens, sm.CacheHitTokens, sm.CacheMissTokens, sm.CacheHitRate, sm.ToolCallCount, errPart), innerWidth)
+
+	if len(analysis.Findings) > 0 || analysis.HealthScore < 100 {
+		fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────────────────────────────────────┤")
+		renderBoxLine(w, fmt.Sprintf(" Context Health: %d/100 (FLAGGED FOR WASTE)", analysis.HealthScore), innerWidth)
+		renderBoxLine(w, fmt.Sprintf(" Waste USD:      $%.2f (%.1f%%) | Wasted Tokens: %d",
+			analysis.WastedUSD, analysis.WastePercentage, analysis.WastedTokens), innerWidth)
+		if len(analysis.Findings) > 0 {
+			renderBoxLine(w, " Findings:", innerWidth)
+			for _, f := range analysis.Findings {
+				sev := strings.ToUpper(string(f.Severity))
+				prefix := fmt.Sprintf("   - [%s] Turn %d: ", sev, f.TurnIndex)
+				msg := fmt.Sprintf("%s -> %s", f.Explanation, f.Recommendation)
+				renderBoxWrapped(w, prefix, msg, innerWidth)
+			}
+		}
+	}
 	fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────────────────────────────────────┤")
 	renderBoxLine(w, fmt.Sprintf(" %-5s %-20s %-20s %-8s %-34s", "STEP", "MODEL", "TOKENS (H/M/O)", "COST", "TOOLS"), innerWidth)
 	fmt.Fprintln(w, "├─────────────────────────────────────────────────────────────────────────────────────────────┤")

@@ -241,3 +241,227 @@ func TestDaemon_FSEventDebounce(t *testing.T) {
 		t.Fatalf("expected 5 requests to be synced after debouncing, got %d", stats.TotalRequests)
 	}
 }
+
+func TestDaemon_WasteThresholdAlerts(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.DataDir = tmpDir
+	cfg.Daemon.WatchFSEvents = false
+	cfg.WasteMonitoring.Enabled = true
+	cfg.WasteMonitoring.SevereTurnTokenThreshold = 120000
+	cfg.WasteMonitoring.WarnConsecutiveToolErrors = 3
+
+	dbPath := filepath.Join(tmpDir, "tracker.db")
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	engine := pricing.NewEngine(nil)
+	d := daemon.NewDaemon(cfg, st, engine)
+
+	var loggedAlerts []string
+	d.SetAlertLogger(func(msg string) {
+		loggedAlerts = append(loggedAlerts, msg)
+	})
+
+	// 1. Severe Turn Token Threshold
+	turnsSevere := []store.Request{
+		{
+			ID:          "req-1",
+			SessionID:   "sess-severe-1",
+			Tool:        "claude_code",
+			StepIndex:   1,
+			InputTokens: 50000,
+			Timestamp:   time.Now().Add(-10 * time.Minute),
+		},
+		{
+			ID:          "req-2",
+			SessionID:   "sess-severe-1",
+			Tool:        "claude_code",
+			StepIndex:   2,
+			InputTokens: 135000, // > 120k threshold
+			Timestamp:   time.Now().Add(-5 * time.Minute),
+		},
+	}
+
+	alerts1 := d.CheckTurnWasteThresholds("sess-severe-1", turnsSevere)
+	if len(alerts1) != 1 {
+		t.Fatalf("expected 1 severe turn alert, got %d: %v", len(alerts1), alerts1)
+	}
+	expectedSub := "[DAEMON ALERT] Session 'sess-severe-1' (tool: claude_code) Turn 2: severe turn token threshold exceeded (threshold: 120000). High snowball/waste risk."
+	if alerts1[0] != expectedSub {
+		t.Errorf("alert mismatch.\nwant: %s\ngot:  %s", expectedSub, alerts1[0])
+	}
+
+	// 2. Consecutive Tool Errors
+	turnsErrors := []store.Request{
+		{
+			ID:             "req-e1",
+			SessionID:      "sess-errors-1",
+			Tool:           "agy",
+			StepIndex:      1,
+			ToolErrorCount: 0,
+			Timestamp:      time.Now().Add(-8 * time.Minute),
+		},
+		{
+			ID:             "req-e2",
+			SessionID:      "sess-errors-1",
+			Tool:           "agy",
+			StepIndex:      2,
+			ToolErrorCount: 1,
+			Timestamp:      time.Now().Add(-6 * time.Minute),
+		},
+		{
+			ID:             "req-e3",
+			SessionID:      "sess-errors-1",
+			Tool:           "agy",
+			StepIndex:      3,
+			ToolErrorCount: 2,
+			Timestamp:      time.Now().Add(-4 * time.Minute),
+		},
+		{
+			ID:             "req-e4",
+			SessionID:      "sess-errors-1",
+			Tool:           "agy",
+			StepIndex:      4,
+			ToolErrorCount: 1,
+			Timestamp:      time.Now().Add(-2 * time.Minute),
+		},
+	}
+
+	alerts2 := d.CheckTurnWasteThresholds("sess-errors-1", turnsErrors)
+	if len(alerts2) != 1 {
+		t.Fatalf("expected 1 consecutive tool error alert, got %d: %v", len(alerts2), alerts2)
+	}
+	expectedErrSub := "[DAEMON ALERT] Session 'sess-errors-1' (tool: agy) Turn 4: consecutive tool errors (threshold: 3). High snowball/waste risk."
+	if alerts2[0] != expectedErrSub {
+		t.Errorf("error alert mismatch.\nwant: %s\ngot:  %s", expectedErrSub, alerts2[0])
+	}
+
+	// 3. Duplicate Deduplication / Throttling
+	dupAlertsSevere := d.CheckTurnWasteThresholds("sess-severe-1", turnsSevere)
+	if len(dupAlertsSevere) != 0 {
+		t.Fatalf("expected 0 duplicate alerts for severe session, got %d: %v", len(dupAlertsSevere), dupAlertsSevere)
+	}
+
+	dupAlertsErrors := d.CheckTurnWasteThresholds("sess-errors-1", turnsErrors)
+	if len(dupAlertsErrors) != 0 {
+		t.Fatalf("expected 0 duplicate alerts for errors session, got %d: %v", len(dupAlertsErrors), dupAlertsErrors)
+	}
+
+	alerted := d.AlertedTurns()
+	if alerted["sess-severe-1:severe"] != 2 {
+		t.Errorf("expected alertedTurns for sess-severe-1:severe to be 2, got %d", alerted["sess-severe-1:severe"])
+	}
+	if alerted["sess-errors-1:tool_errors"] != 4 {
+		t.Errorf("expected alertedTurns for sess-errors-1:tool_errors to be 4, got %d", alerted["sess-errors-1:tool_errors"])
+	}
+
+	// 4. Progression to Next Error Turn
+	turnsErrorsWithTurn5 := append(turnsErrors, store.Request{
+		ID:             "req-e5",
+		SessionID:      "sess-errors-1",
+		Tool:           "agy",
+		StepIndex:      5,
+		ToolErrorCount: 1,
+		Timestamp:      time.Now(),
+	})
+	alertsProg := d.CheckTurnWasteThresholds("sess-errors-1", turnsErrorsWithTurn5)
+	if len(alertsProg) != 1 {
+		t.Fatalf("expected 1 alert for turn 5 progression, got %d: %v", len(alertsProg), alertsProg)
+	}
+	if !strings.Contains(alertsProg[0], "Turn 5:") {
+		t.Errorf("expected alert for Turn 5, got %s", alertsProg[0])
+	}
+
+	// 5. Resolved Error Streak Does Not Alert (Trailing Success)
+	turnsRecovered := []store.Request{
+		{
+			ID:             "req-r1",
+			SessionID:      "sess-recovered",
+			Tool:           "agy",
+			StepIndex:      1,
+			ToolErrorCount: 1,
+			Timestamp:      time.Now().Add(-5 * time.Minute),
+		},
+		{
+			ID:             "req-r2",
+			SessionID:      "sess-recovered",
+			Tool:           "agy",
+			StepIndex:      2,
+			ToolErrorCount: 1,
+			Timestamp:      time.Now().Add(-4 * time.Minute),
+		},
+		{
+			ID:             "req-r3",
+			SessionID:      "sess-recovered",
+			Tool:           "agy",
+			StepIndex:      3,
+			ToolErrorCount: 1,
+			Timestamp:      time.Now().Add(-3 * time.Minute),
+		},
+		{
+			ID:             "req-r4",
+			SessionID:      "sess-recovered",
+			Tool:           "agy",
+			StepIndex:      4,
+			ToolErrorCount: 0, // Recovered!
+			Status:         "success",
+			Timestamp:      time.Now().Add(-1 * time.Minute),
+		},
+	}
+	alertsRecovered := d.CheckTurnWasteThresholds("sess-recovered", turnsRecovered)
+	if len(alertsRecovered) != 0 {
+		t.Errorf("expected 0 alerts for session with trailing recovery, got %d: %v", len(alertsRecovered), alertsRecovered)
+	}
+
+	// 6. Disabled Monitoring Suppresses Alerts
+	cfgDisabled := config.DefaultConfig()
+	cfgDisabled.WasteMonitoring.Enabled = false
+	dDisabled := daemon.NewDaemon(cfgDisabled, st, engine)
+	alertsDisabled := dDisabled.CheckTurnWasteThresholds("sess-severe-1", turnsSevere)
+	if len(alertsDisabled) != 0 {
+		t.Errorf("expected 0 alerts when waste monitoring disabled, got %d", len(alertsDisabled))
+	}
+
+	// 7. Store Integration via RunIncrementalSync
+	cost := 0.05
+	reqsToInsert := []store.Request{
+		{
+			ID:          "sync-req-1",
+			SessionID:   "sess-sync-alert",
+			Tool:        "claude_code",
+			StepIndex:   1,
+			Model:       "claude-3-5-sonnet",
+			InputTokens: 140000,
+			CostUSD:     &cost,
+			Timestamp:   time.Now(),
+		},
+	}
+	if _, err := st.InsertRequests(reqsToInsert); err != nil {
+		t.Fatalf("failed to insert requests: %v", err)
+	}
+
+	d.ResetAlertedTurns()
+	var syncAlerts []string
+	d.SetAlertLogger(func(msg string) {
+		syncAlerts = append(syncAlerts, msg)
+	})
+
+	if _, err := d.RunIncrementalSync(); err != nil {
+		t.Fatalf("RunIncrementalSync failed: %v", err)
+	}
+
+	var foundSyncAlert bool
+	for _, a := range syncAlerts {
+		if strings.Contains(a, "sess-sync-alert") && strings.Contains(a, "severe turn token threshold exceeded") {
+			foundSyncAlert = true
+			break
+		}
+	}
+	if !foundSyncAlert {
+		t.Errorf("expected RunIncrementalSync to trigger alert for sess-sync-alert, alerts: %v", syncAlerts)
+	}
+}

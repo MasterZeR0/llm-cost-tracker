@@ -599,3 +599,217 @@ func TestStore_LatencyOverTimeAndModelUsage(t *testing.T) {
 		t.Fatalf("unexpected mu[1]: %+v", mu[1])
 	}
 }
+
+func TestStore_GetPeriodSessionDetails(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_period_details.db")
+
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	// 1. Test empty DB returns empty slice without error
+	emptyToday, err := st.GetPeriodSessionDetails("today")
+	if err != nil {
+		t.Fatalf("unexpected error on empty store for today: %v", err)
+	}
+	if len(emptyToday) != 0 {
+		t.Fatalf("expected 0 session details on empty store, got %d", len(emptyToday))
+	}
+
+	emptyAll, err := st.GetPeriodSessionDetails("all")
+	if err != nil {
+		t.Fatalf("unexpected error on empty store for all: %v", err)
+	}
+	if len(emptyAll) != 0 {
+		t.Fatalf("expected 0 session details on empty store, got %d", len(emptyAll))
+	}
+
+	// 2. Seed requests across at least 2 distinct sessions with multiple turns and tool calls
+	now := time.Now().UTC()
+	sess1 := "sess-claude-1"
+	sess2 := "sess-agy-2"
+	sessOld := "sess-older-3"
+
+	cost1 := 0.25
+	cost2 := 0.75
+	cost3 := 0.10
+	cost4 := 0.40
+	costOld := 1.20
+
+	reqs := []store.Request{
+		// Session 1: 2 turns (claude_code)
+		{
+			ID:                "req-1-0",
+			Tool:              "claude_code",
+			SessionID:         sess1,
+			Timestamp:         now.Add(-20 * time.Minute),
+			Model:             "claude-3-7-sonnet",
+			InputTokens:       1000,
+			OutputTokens:      200,
+			CacheReadTokens:   500,
+			TotalTokens:       1700,
+			CostUSD:           &cost1,
+			StepIndex:         0,
+			ToolCallCount:     1,
+			ToolErrorCount:    0,
+			SubagentCallCount: 0,
+			ToolCalls: []store.ToolCall{
+				{ID: "tc-1-0", RequestID: "req-1-0", SessionID: sess1, ToolName: "ReadFile", Status: "success", CreatedAt: now.Add(-20 * time.Minute)},
+			},
+		},
+		{
+			ID:                "req-1-1",
+			Tool:              "claude_code",
+			SessionID:         sess1,
+			Timestamp:         now.Add(-15 * time.Minute),
+			Model:             "claude-3-7-sonnet",
+			InputTokens:       2000,
+			OutputTokens:      400,
+			CacheReadTokens:   1500,
+			TotalTokens:       3900,
+			CostUSD:           &cost2,
+			StepIndex:         1,
+			ToolCallCount:     2,
+			ToolErrorCount:    1,
+			SubagentCallCount: 0,
+			ToolCalls: []store.ToolCall{
+				{ID: "tc-1-1a", RequestID: "req-1-1", SessionID: sess1, ToolName: "Bash", Status: "error", CreatedAt: now.Add(-15 * time.Minute)},
+				{ID: "tc-1-1b", RequestID: "req-1-1", SessionID: sess1, ToolName: "ReadFile", Status: "success", CreatedAt: now.Add(-14 * time.Minute)},
+			},
+		},
+		// Session 2: 2 turns (agy)
+		{
+			ID:                "req-2-0",
+			Tool:              "agy",
+			SessionID:         sess2,
+			Timestamp:         now.Add(-10 * time.Minute),
+			Model:             "gemini-2.0-flash",
+			InputTokens:       500,
+			OutputTokens:      100,
+			CacheReadTokens:   200,
+			TotalTokens:       800,
+			CostUSD:           &cost3,
+			StepIndex:         0,
+			ToolCallCount:     1,
+			ToolErrorCount:    0,
+			SubagentCallCount: 1,
+			ToolCalls: []store.ToolCall{
+				{ID: "tc-2-0", RequestID: "req-2-0", SessionID: sess2, ToolName: "invoke_subagent", Status: "success", CreatedAt: now.Add(-10 * time.Minute)},
+			},
+		},
+		{
+			ID:                "req-2-1",
+			Tool:              "agy",
+			SessionID:         sess2,
+			Timestamp:         now.Add(-5 * time.Minute),
+			Model:             "gemini-2.0-flash",
+			InputTokens:       800,
+			OutputTokens:      150,
+			CacheReadTokens:   400,
+			TotalTokens:       1350,
+			CostUSD:           &cost4,
+			StepIndex:         1,
+			ToolCallCount:     0,
+			ToolErrorCount:    0,
+			SubagentCallCount: 0,
+		},
+		// Older Session: 45 days ago
+		{
+			ID:            "req-old-0",
+			Tool:          "codex",
+			SessionID:     sessOld,
+			Timestamp:     now.Add(-45 * 24 * time.Hour),
+			Model:         "o3-mini",
+			InputTokens:   600,
+			OutputTokens:  100,
+			TotalTokens:   700,
+			CostUSD:       &costOld,
+			StepIndex:     0,
+			ToolCallCount: 0,
+		},
+	}
+
+	if _, err := st.InsertRequests(reqs); err != nil {
+		t.Fatalf("failed to insert requests: %v", err)
+	}
+
+	// 3. Test "today" period
+	detailsToday, err := st.GetPeriodSessionDetails("today")
+	if err != nil {
+		t.Fatalf("unexpected error for GetPeriodSessionDetails(today): %v", err)
+	}
+	if len(detailsToday) != 2 {
+		t.Fatalf("expected 2 sessions today, got %d", len(detailsToday))
+	}
+
+	detailsMap := make(map[string]store.SessionDetail)
+	for _, d := range detailsToday {
+		detailsMap[d.Summary.SessionID] = d
+	}
+
+	d1, ok := detailsMap[sess1]
+	if !ok {
+		t.Fatalf("missing session %s in today details", sess1)
+	}
+	if d1.Summary.TurnCount != 2 {
+		t.Errorf("expected 2 turns in sess1 summary, got %d", d1.Summary.TurnCount)
+	}
+	if d1.Summary.TotalCost != 1.00 {
+		t.Errorf("expected $1.00 total cost in sess1 summary, got %f", d1.Summary.TotalCost)
+	}
+	if d1.Summary.ToolCallCount != 3 {
+		t.Errorf("expected 3 tool calls in sess1 summary, got %d", d1.Summary.ToolCallCount)
+	}
+	if d1.Summary.ToolErrorCount != 1 {
+		t.Errorf("expected 1 tool error in sess1 summary, got %d", d1.Summary.ToolErrorCount)
+	}
+	if len(d1.Turns) != 2 {
+		t.Fatalf("expected 2 turns in sess1, got %d", len(d1.Turns))
+	}
+	// Verify chronological ordering (step_index and timestamp)
+	if d1.Turns[0].StepIndex != 0 || d1.Turns[1].StepIndex != 1 {
+		t.Errorf("turns not ordered by step_index: [%d, %d]", d1.Turns[0].StepIndex, d1.Turns[1].StepIndex)
+	}
+	if !d1.Turns[0].Timestamp.Before(d1.Turns[1].Timestamp) {
+		t.Errorf("turns not ordered by timestamp: [%v, %v]", d1.Turns[0].Timestamp, d1.Turns[1].Timestamp)
+	}
+	// Verify tool calls on turns
+	if len(d1.Turns[0].ToolCalls) != 1 || d1.Turns[0].ToolCalls[0].ToolName != "ReadFile" {
+		t.Errorf("unexpected tool calls on sess1 turn 0: %+v", d1.Turns[0].ToolCalls)
+	}
+	if len(d1.Turns[1].ToolCalls) != 2 {
+		t.Errorf("expected 2 tool calls on sess1 turn 1, got %d", len(d1.Turns[1].ToolCalls))
+	}
+
+	d2, ok := detailsMap[sess2]
+	if !ok {
+		t.Fatalf("missing session %s in today details", sess2)
+	}
+	if d2.Summary.TurnCount != 2 {
+		t.Errorf("expected 2 turns in sess2 summary, got %d", d2.Summary.TurnCount)
+	}
+	if d2.Summary.TotalCost != 0.50 {
+		t.Errorf("expected $0.50 total cost in sess2 summary, got %f", d2.Summary.TotalCost)
+	}
+	if d2.Summary.SubagentCount != 1 {
+		t.Errorf("expected 1 subagent in sess2 summary, got %d", d2.Summary.SubagentCount)
+	}
+	if len(d2.Turns) != 2 {
+		t.Fatalf("expected 2 turns in sess2, got %d", len(d2.Turns))
+	}
+	if len(d2.Turns[0].ToolCalls) != 1 || d2.Turns[0].ToolCalls[0].ToolName != "invoke_subagent" {
+		t.Errorf("unexpected tool calls on sess2 turn 0: %+v", d2.Turns[0].ToolCalls)
+	}
+
+	// 4. Test "all" period
+	detailsAll, err := st.GetPeriodSessionDetails("all")
+	if err != nil {
+		t.Fatalf("unexpected error for GetPeriodSessionDetails(all): %v", err)
+	}
+	if len(detailsAll) != 3 {
+		t.Fatalf("expected 3 sessions in all details, got %d", len(detailsAll))
+	}
+}

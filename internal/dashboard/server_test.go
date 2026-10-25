@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MasterZeR0/llm-cost-tracker/internal/analyzer"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/config"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/dashboard"
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
@@ -410,5 +411,190 @@ func TestDashboardAPI_AnalyticsAndSessions(t *testing.T) {
 	srv.Router().ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for wildcard '%%' session id, got %d", w.Code)
+	}
+}
+
+func TestDashboardAPI_Waste(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	now := time.Now().UTC()
+	cost1 := 0.10
+	cost2 := 0.20
+	latency := int64(600)
+
+	_, err = st.InsertRequests([]store.Request{
+		{
+			ID: "r1", Tool: "claude_code", SessionID: "sess-w1", Timestamp: now,
+			Model: "claude-3-7-sonnet", InputTokens: 5000, OutputTokens: 1000,
+			CacheReadTokens: 1000, TotalTokens: 6000, CostUSD: &cost1, LatencyMS: &latency,
+			Status: "success", StepIndex: 1,
+		},
+		{
+			ID: "r2", Tool: "claude_code", SessionID: "sess-w1", Timestamp: now.Add(time.Second),
+			Model: "claude-3-7-sonnet", InputTokens: 95000, OutputTokens: 2000,
+			CacheReadTokens: 500, TotalTokens: 97000, CostUSD: &cost2, LatencyMS: &latency,
+			Status: "success", StepIndex: 2,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	srv := dashboard.NewServer(cfg, st)
+
+	// 1. Default period (today)
+	req := httptest.NewRequest("GET", "/api/waste", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /api/waste, got %d", w.Code)
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		t.Fatalf("expected application/json Content-Type, got %q", ct)
+	}
+
+	var summary analyzer.PeriodWasteSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &summary); err != nil {
+		t.Fatalf("failed to unmarshal PeriodWasteSummary: %v", err)
+	}
+	if summary.Period != "today" {
+		t.Fatalf("expected period 'today', got %q", summary.Period)
+	}
+	if summary.CategoryTotals == nil {
+		t.Fatal("expected non-nil CategoryTotals")
+	}
+
+	// 2. Explicit period=all
+	req = httptest.NewRequest("GET", "/api/waste?period=all", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /api/waste?period=all, got %d", w.Code)
+	}
+	var allSummary analyzer.PeriodWasteSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &allSummary); err != nil {
+		t.Fatalf("failed to unmarshal PeriodWasteSummary for period=all: %v", err)
+	}
+	if allSummary.Period != "all" {
+		t.Fatalf("expected period 'all', got %q", allSummary.Period)
+	}
+	if allSummary.TotalSessions != 1 {
+		t.Fatalf("expected 1 session, got %d", allSummary.TotalSessions)
+	}
+}
+
+func TestDashboardAPI_SessionWaste(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	st, err := store.NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	now := time.Now().UTC()
+	cost1 := 0.05
+	cost2 := 0.25
+	latency := int64(500)
+
+	_, err = st.InsertRequests([]store.Request{
+		{
+			ID: "r1", Tool: "cursor", SessionID: "sess-inspect-1", Timestamp: now,
+			Model: "claude-3-5-sonnet", InputTokens: 2000, OutputTokens: 300,
+			TotalTokens: 2300, CostUSD: &cost1, LatencyMS: &latency,
+			Status: "success", StepIndex: 1,
+		},
+		{
+			ID: "r2", Tool: "cursor", SessionID: "sess-inspect-1", Timestamp: now.Add(time.Second),
+			Model: "claude-3-5-sonnet", InputTokens: 85000, OutputTokens: 500,
+			TotalTokens: 85500, CostUSD: &cost2, LatencyMS: &latency,
+			Status: "success", StepIndex: 2,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	srv := dashboard.NewServer(cfg, st)
+
+	// 1. GET /api/sessions/{id}/waste (path param)
+	req := httptest.NewRequest("GET", "/api/sessions/sess-inspect-1/waste", nil)
+	w := httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from path /api/sessions/sess-inspect-1/waste, got %d", w.Code)
+	}
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/json") {
+		t.Fatalf("expected application/json Content-Type, got %q", ct)
+	}
+
+	var analysis analyzer.SessionWasteAnalysis
+	if err := json.Unmarshal(w.Body.Bytes(), &analysis); err != nil {
+		t.Fatalf("failed to unmarshal SessionWasteAnalysis: %v", err)
+	}
+	if analysis.SessionID != "sess-inspect-1" {
+		t.Fatalf("expected SessionID sess-inspect-1, got %q", analysis.SessionID)
+	}
+	if analysis.HealthScore <= 0 || analysis.HealthScore > 100 {
+		t.Fatalf("invalid HealthScore %d", analysis.HealthScore)
+	}
+	if len(analysis.Trajectory) != 2 {
+		t.Fatalf("expected 2 trajectory points, got %d", len(analysis.Trajectory))
+	}
+
+	// 2. GET /api/sessions/waste?id=sess-inspect-1 (query param)
+	req = httptest.NewRequest("GET", "/api/sessions/waste?id=sess-inspect-1", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from query /api/sessions/waste?id=..., got %d", w.Code)
+	}
+
+	// 3. 404 for unknown session via path
+	req = httptest.NewRequest("GET", "/api/sessions/unknown-session/waste", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown session, got %d", w.Code)
+	}
+	var errResp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("expected JSON 404 response: %v", err)
+	}
+	if errResp["error"] != "session not found" {
+		t.Fatalf("expected 'session not found' error, got %q", errResp["error"])
+	}
+
+	// 4. 404 for unknown session via query param
+	req = httptest.NewRequest("GET", "/api/sessions/waste?id=unknown-session", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown session query, got %d", w.Code)
+	}
+
+	// 5. 400 for missing session id
+	req = httptest.NewRequest("GET", "/api/sessions/waste", nil)
+	w = httptest.NewRecorder()
+	srv.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing session id, got %d", w.Code)
 	}
 }

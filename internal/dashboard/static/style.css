@@ -267,6 +267,206 @@ code {
   color: var(--text);
 }
 
+/* Waste & Health Diagnostics */
+.metric-waste {
+  color: #f85149;
+}
+
+.health-good {
+  color: #3fb950 !important;
+}
+
+.health-warn {
+  color: #d29922 !important;
+}
+
+.health-bad {
+  color: #f85149 !important;
+}
+
+.health-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.health-badge.health-good {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+  border: 1px solid rgba(63, 185, 80, 0.4);
+}
+
+.health-badge.health-warn {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.4);
+}
+
+.health-badge.health-bad {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.4);
+}
+
+.waste-trajectory-section {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.section-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.trajectory-chart-container {
+  position: relative;
+  height: 250px;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.waste-findings-container {
+  margin-top: 12px;
+}
+
+.findings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.finding-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.finding-card.sev-critical {
+  border-left-color: #f85149;
+}
+
+.finding-card.sev-high {
+  border-left-color: #ff7b72;
+}
+
+.finding-card.sev-medium {
+  border-left-color: #d29922;
+}
+
+.finding-card.sev-low {
+  border-left-color: #58a6ff;
+}
+
+.finding-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+}
+
+.finding-cat {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.badge-sev {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.badge-sev-critical {
+  background: rgba(248, 81, 73, 0.2);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.4);
+}
+
+.badge-sev-high {
+  background: rgba(255, 123, 114, 0.2);
+  color: #ff7b72;
+  border: 1px solid rgba(255, 123, 114, 0.4);
+}
+
+.badge-sev-medium {
+  background: rgba(210, 153, 34, 0.2);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.4);
+}
+
+.badge-sev-low {
+  background: rgba(88, 166, 255, 0.2);
+  color: #58a6ff;
+  border: 1px solid rgba(88, 166, 255, 0.4);
+}
+
+.finding-metrics {
+  color: #8b949e;
+  font-size: 0.8rem;
+  margin-left: auto;
+}
+
+.finding-body p {
+  margin: 4px 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.finding-expl {
+  color: var(--text);
+}
+
+.finding-rec {
+  color: #79c0ff;
+}
+
+.finding-empty {
+  padding: 12px;
+  border-radius: 6px;
+  background: rgba(63, 185, 80, 0.08);
+  border: 1px solid rgba(63, 185, 80, 0.25);
+  color: #7ee787;
+  font-size: 0.85rem;
+}
+
+.tr-waste {
+  background: rgba(248, 81, 73, 0.08) !important;
+}
+
+.badge-waste {
+  background: rgba(248, 81, 73, 0.2);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.4);
+}
+
+.badge-warn {
+  background: rgba(210, 153, 34, 0.2);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.4);
+}
+
+.badge-turn-ok {
+  background: rgba(63, 185, 80, 0.1);
+  color: #3fb950;
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
 @media (max-width: 600px) {
   .charts-grid {
     grid-template-columns: 1fr;

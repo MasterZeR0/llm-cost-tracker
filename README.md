@@ -99,6 +99,9 @@ llm-track sessions --period=today
 # Deep-dive into a specific session's turn chronology and tool calls
 llm-track sessions <session-id-or-prefix>
 
+# Diagnose context bloat, runaway token waste, and cache churn
+llm-track waste --period=today
+
 # Start the background watcher daemon
 llm-track daemon start
 
@@ -111,9 +114,10 @@ llm-track dashboard
 ## Architecture
 
 - **`internal/parsers/`**: Tool-specific ingestors (JSONL, SQLite WAL, protobuf step decoders) with incremental state tracking.
+- **`internal/analyzer/`**: Context bloat, token waste, and cache churn detection engine with actionable optimization recommendations.
 - **`internal/pricing/`**: Embedded model pricing catalog with prefix-matching and per-million token rates (miss, hit, write, output).
 - **`internal/store/`**: SQLite persistence layer with thread-safe queries, session aggregations, and migration engine.
-- **`internal/daemon/`**: Filesystem notification loop and automatic backfiller.
+- **`internal/daemon/`**: Filesystem notification loop, automatic backfiller, and live threshold monitor.
 - **`internal/dashboard/`**: Zero-dependency embedded web server (`embed.FS`) and RESTful analytics API.
 
 ---
@@ -122,6 +126,10 @@ llm-track dashboard
 
 - [x] **IDE & Extension Assistant Adapters**:
   - Direct log & session ingestion for **Cline**, **Roo Code**, **Cursor**, **Windsurf**, and **GitHub Copilot CLI**.
+- [x] **Token Context Bloat & Waste Optimization**:
+  - Context window growth trajectory visualization and multi-category waste engine (`llm-track waste`).
+  - Detection for context snowballing, cache churn, tool error loops, and repetitive ingestion.
+  - Automated recommendations for context truncation, compaction (`/compact`), and error triage.
 - [ ] **Local LLM Runtimes (Phase 2)**:
   - Local LLM tracking for **Ollama** and **vLLM** endpoints.
 - [ ] **Tiered & Context-Window-Dependent Pricing**:
@@ -133,9 +141,6 @@ llm-track dashboard
 - [ ] **Team & Multi-Device Sync**:
   - Centralized aggregation server option (remote sync daemon) for developer teams and engineering orgs.
   - Export backend adapters for **PostgreSQL**, **ClickHouse**, or **TimescaleDB**.
-- [ ] **Token Context Bloat & Waste Optimization**:
-  - Context window growth visualization to detect repetitive file re-reading or prompt inflation.
-  - Automated recommendations for context truncation or compaction.
 - [ ] **Observability & Exporters**:
   - Native Prometheus `/metrics` exporter endpoint.
   - Pre-built Grafana dashboard templates and OpenTelemetry tracing integrations.

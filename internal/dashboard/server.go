@@ -47,6 +47,9 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /api/sessions", s.handleSessions)
 	s.router.HandleFunc("GET /api/sessions/detail", s.handleSessionDetail)
 	s.router.HandleFunc("GET /api/sessions/{id}", s.handleSessionDetail)
+	s.router.HandleFunc("GET /api/waste", s.handleWaste)
+	s.router.HandleFunc("GET /api/sessions/waste", s.handleSessionWaste)
+	s.router.HandleFunc("GET /api/sessions/{id}/waste", s.handleSessionWaste)
 
 	sub, err := fs.Sub(staticFS, "static")
 	if err == nil {

@@ -26,6 +26,15 @@ type DashboardConfig struct {
 	Host string `yaml:"host"`
 }
 
+type WasteMonitoringConfig struct {
+	Enabled                   bool    `yaml:"enabled"`
+	SnowballTokenThreshold    int64   `yaml:"snowball_token_threshold"`
+	SevereTurnTokenThreshold  int64   `yaml:"severe_turn_token_threshold"`
+	WarnConsecutiveToolErrors int     `yaml:"warn_consecutive_tool_errors"`
+	CacheChurnDropThreshold   float64 `yaml:"cache_churn_drop_threshold"`
+	LogAlertsToConsole        bool    `yaml:"log_alerts_to_console"`
+}
+
 type Config struct {
 	DataDir           string                `yaml:"data_dir"`
 	StoreContent      bool                  `yaml:"store_content"`
@@ -34,6 +43,7 @@ type Config struct {
 	Tools             map[string]ToolConfig `yaml:"tools"`
 	Daemon            DaemonConfig          `yaml:"daemon"`
 	Dashboard         DashboardConfig       `yaml:"dashboard"`
+	WasteMonitoring   WasteMonitoringConfig `yaml:"waste_monitoring"`
 }
 
 func ExpandHome(path string) string {
@@ -108,6 +118,14 @@ func DefaultConfig() *Config {
 		Dashboard: DashboardConfig{
 			Port: 8384,
 			Host: "127.0.0.1",
+		},
+		WasteMonitoring: WasteMonitoringConfig{
+			Enabled:                   true,
+			SnowballTokenThreshold:    80000,
+			SevereTurnTokenThreshold:  120000,
+			WarnConsecutiveToolErrors: 3,
+			CacheChurnDropThreshold:   0.40,
+			LogAlertsToConsole:        true,
 		},
 	}
 }

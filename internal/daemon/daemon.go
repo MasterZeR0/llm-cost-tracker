@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,17 +20,200 @@ import (
 )
 
 type Daemon struct {
-	cfg    *config.Config
-	store  *store.Store
-	engine *pricing.Engine
+	cfg          *config.Config
+	store        *store.Store
+	engine       *pricing.Engine
+	alertMu      sync.Mutex
+	alertedTurns map[string]int64
+	alertLogger  func(msg string)
 }
 
 func NewDaemon(cfg *config.Config, st *store.Store, engine *pricing.Engine) *Daemon {
 	return &Daemon{
-		cfg:    cfg,
-		store:  st,
-		engine: engine,
+		cfg:          cfg,
+		store:        st,
+		engine:       engine,
+		alertedTurns: make(map[string]int64),
 	}
+}
+
+// SetAlertLogger sets a custom alert logging callback (useful for testing or custom notification pipelines).
+func (d *Daemon) SetAlertLogger(fn func(msg string)) {
+	d.alertMu.Lock()
+	defer d.alertMu.Unlock()
+	d.alertLogger = fn
+}
+
+// AlertedTurns returns a copy of the recorded alert turn checkpoints.
+func (d *Daemon) AlertedTurns() map[string]int64 {
+	d.alertMu.Lock()
+	defer d.alertMu.Unlock()
+	res := make(map[string]int64, len(d.alertedTurns))
+	for k, v := range d.alertedTurns {
+		res[k] = v
+	}
+	return res
+}
+
+// ResetAlertedTurns clears the recorded alert turn checkpoints.
+func (d *Daemon) ResetAlertedTurns() {
+	d.alertMu.Lock()
+	defer d.alertMu.Unlock()
+	d.alertedTurns = make(map[string]int64)
+}
+
+func (d *Daemon) logAlert(msg string) {
+	d.alertMu.Lock()
+	logger := d.alertLogger
+	d.alertMu.Unlock()
+
+	if logger != nil {
+		logger(msg)
+	}
+	slog.Warn(msg)
+	if d.cfg != nil && d.cfg.WasteMonitoring.LogAlertsToConsole {
+		fmt.Println(msg)
+	}
+}
+
+// CheckTurnWasteThresholds inspects session turns for waste violations:
+// Check 1: Severe turn token threshold breaches.
+// Check 2: Consecutive trailing tool execution errors.
+// Triggered alerts are logged and returned; duplicates on subsequent calls are throttled.
+func (d *Daemon) CheckTurnWasteThresholds(sessionID string, turns []store.Request) []string {
+	if d.cfg == nil || !d.cfg.WasteMonitoring.Enabled || len(turns) == 0 {
+		return nil
+	}
+
+	var alerts []string
+
+	d.alertMu.Lock()
+	if d.alertedTurns == nil {
+		d.alertedTurns = make(map[string]int64)
+	}
+
+	tool := "unknown"
+	for _, t := range turns {
+		if t.Tool != "" {
+			tool = t.Tool
+			break
+		}
+	}
+
+	severeThreshold := d.cfg.WasteMonitoring.SevereTurnTokenThreshold
+	if severeThreshold <= 0 {
+		severeThreshold = d.cfg.WasteMonitoring.SnowballTokenThreshold
+	}
+	if severeThreshold <= 0 {
+		severeThreshold = 120000
+	}
+
+	snowballThreshold := d.cfg.WasteMonitoring.SnowballTokenThreshold
+	if snowballThreshold <= 0 {
+		snowballThreshold = 80000
+	}
+
+	// Check 1: Severe turn token threshold on any turn in the active session
+	for i, turn := range turns {
+		turnNum := turn.StepIndex
+		if turnNum == 0 {
+			turnNum = int64(i + 1)
+		}
+
+		tTool := turn.Tool
+		if tTool == "" {
+			tTool = tool
+		}
+
+		if turn.InputTokens >= severeThreshold {
+			key := fmt.Sprintf("%s:severe", sessionID)
+			if lastAlerted, exists := d.alertedTurns[key]; !exists || turnNum > lastAlerted {
+				d.alertedTurns[key] = turnNum
+				reason := "severe turn token threshold exceeded"
+				msg := fmt.Sprintf("[DAEMON ALERT] Session '%s' (tool: %s) Turn %d: %s (threshold: %d). High snowball/waste risk.",
+					sessionID, tTool, turnNum, reason, severeThreshold)
+				alerts = append(alerts, msg)
+			}
+		} else if d.cfg.WasteMonitoring.SnowballTokenThreshold > 0 && turn.InputTokens >= snowballThreshold {
+			key := fmt.Sprintf("%s:snowball", sessionID)
+			if lastAlerted, exists := d.alertedTurns[key]; !exists || turnNum > lastAlerted {
+				d.alertedTurns[key] = turnNum
+				reason := "snowball token threshold exceeded"
+				msg := fmt.Sprintf("[DAEMON ALERT] Session '%s' (tool: %s) Turn %d: %s (threshold: %d). High snowball/waste risk.",
+					sessionID, tTool, turnNum, reason, snowballThreshold)
+				alerts = append(alerts, msg)
+			}
+		}
+	}
+
+	// Check 2: Consecutive tool errors in trailing turns
+	warnConsecutiveErrors := d.cfg.WasteMonitoring.WarnConsecutiveToolErrors
+	if warnConsecutiveErrors <= 0 {
+		warnConsecutiveErrors = 3
+	}
+
+	consecutiveErrors := 0
+	for i := len(turns) - 1; i >= 0; i-- {
+		if turns[i].ToolErrorCount > 0 || strings.EqualFold(turns[i].Status, "error") || strings.EqualFold(turns[i].Status, "failed") {
+			consecutiveErrors++
+		} else {
+			break
+		}
+	}
+
+	if consecutiveErrors >= warnConsecutiveErrors {
+		lastTurn := turns[len(turns)-1]
+		turnNum := lastTurn.StepIndex
+		if turnNum == 0 {
+			turnNum = int64(len(turns))
+		}
+		tTool := lastTurn.Tool
+		if tTool == "" {
+			tTool = tool
+		}
+
+		key := fmt.Sprintf("%s:tool_errors", sessionID)
+		if lastAlerted, exists := d.alertedTurns[key]; !exists || turnNum > lastAlerted {
+			d.alertedTurns[key] = turnNum
+			reason := "consecutive tool errors"
+			msg := fmt.Sprintf("[DAEMON ALERT] Session '%s' (tool: %s) Turn %d: %s (threshold: %d). High snowball/waste risk.",
+				sessionID, tTool, turnNum, reason, warnConsecutiveErrors)
+			alerts = append(alerts, msg)
+		}
+	}
+	d.alertMu.Unlock()
+
+	for _, msg := range alerts {
+		d.logAlert(msg)
+	}
+
+	return alerts
+}
+
+func (d *Daemon) checkActiveSessions() {
+	if d.store == nil {
+		return
+	}
+	summaries, err := d.store.GetSessionSummaries("all", 10)
+	if err != nil || len(summaries) == 0 {
+		return
+	}
+	for _, sm := range summaries {
+		detail, err := d.store.GetSessionDetail(sm.SessionID)
+		if err != nil || detail == nil || len(detail.Turns) == 0 {
+			continue
+		}
+		d.CheckTurnWasteThresholds(sm.SessionID, detail.Turns)
+	}
+}
+
+// RunIncrementalSync executes SyncAll and evaluates active sessions for waste threshold breaches.
+func (d *Daemon) RunIncrementalSync() (int, error) {
+	imported, err := SyncAll(d.cfg, d.store, d.engine)
+	if d.cfg != nil && d.cfg.WasteMonitoring.Enabled && d.store != nil {
+		d.checkActiveSessions()
+	}
+	return imported, err
 }
 
 func (d *Daemon) PIDFilePath() string {
@@ -114,7 +298,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 	slog.Info("daemon started", "pid", os.Getpid())
 
 	// Run initial sync on start
-	_, _ = SyncAll(d.cfg, d.store, d.engine)
+	_, _ = d.RunIncrementalSync()
 
 	var eventsCh <-chan fsnotify.Event
 	var errorsCh <-chan error
@@ -179,12 +363,12 @@ func (d *Daemon) Start(ctx context.Context) error {
 				debounceTimer = nil
 				debounceCh = nil
 			}
-			_, _ = SyncAll(d.cfg, d.store, d.engine)
+			_, _ = d.RunIncrementalSync()
 		case <-debounceCh:
 			slog.Debug("debounced fs sync triggering")
 			debounceTimer = nil
 			debounceCh = nil
-			_, _ = SyncAll(d.cfg, d.store, d.engine)
+			_, _ = d.RunIncrementalSync()
 		case event, ok := <-eventsCh:
 			if !ok {
 				eventsCh = nil

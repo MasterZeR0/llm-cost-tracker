@@ -70,6 +70,7 @@ async function loadDashboard() {
   document.getElementById('total-sessions').innerText = totalSessions.toLocaleString();
   document.getElementById('turns-per-session').innerText = turnsPerSess.toFixed(1) + ' turns/sess';
 
+  loadWaste(period);
   loadCostOverTime(period);
   loadLatencyOverTime(period);
   loadCostByModel(period);
@@ -313,6 +314,80 @@ async function loadRequests(period) {
   });
 }
 
+async function loadWaste(period) {
+  try {
+    const waste = await fetchJSON(`/api/waste?period=${encodeURIComponent(period)}`);
+    const wasteCostEl = document.getElementById('avoidable-waste');
+    if (wasteCostEl) {
+      wasteCostEl.innerText = '$' + (waste.total_wasted_usd || 0).toFixed(2);
+    }
+    const wasteTokEl = document.getElementById('avoidable-tokens');
+    if (wasteTokEl) {
+      wasteTokEl.innerText = formatTokens(waste.total_wasted_tokens || 0) + ' wasted tokens';
+    }
+    const healthEl = document.getElementById('avg-health');
+    if (healthEl) {
+      const score = Math.round(waste.avg_health_score !== undefined ? waste.avg_health_score : 100);
+      healthEl.innerText = score + '/100';
+      healthEl.className = 'metric ' + (score >= 90 ? 'health-good' : score >= 70 ? 'health-warn' : 'health-bad');
+    }
+    const flaggedEl = document.getElementById('flagged-sessions');
+    if (flaggedEl) {
+      flaggedEl.innerText = `${waste.wasted_sessions || 0} flagged sessions`;
+    }
+
+    // Render Category Breakdown Chart
+    const catCanvas = document.getElementById('wasteCategoryChart');
+    if (catCanvas) {
+      const totals = waste.category_totals_usd || {};
+      const snowball = totals['context_snowball'] || 0;
+      const churn = totals['cache_churn'] || 0;
+      const errors = totals['tool_error_loop'] || 0;
+      const read = totals['repetitive_read'] || 0;
+
+      if (charts.wasteCategory) charts.wasteCategory.destroy();
+      charts.wasteCategory = new Chart(catCanvas, {
+        type: 'bar',
+        data: {
+          labels: ['Context Snowball', 'Cache Churn', 'Tool Error Loop', 'Repetitive Read'],
+          datasets: [{
+            label: 'Waste Cost ($)',
+            data: [snowball, churn, errors, read],
+            backgroundColor: ['#f85149', '#f0883e', '#d29922', '#a371f7'],
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                callback: function(v) { return '$' + Number(v).toFixed(2); }
+              }
+            }
+          }
+        }
+      });
+    }
+  } catch (err) {
+    console.error('Failed to load waste analytics:', err);
+  }
+}
+
+function formatCategoryLabel(cat) {
+  switch (cat) {
+    case 'context_snowball': return 'Context Snowball';
+    case 'cache_churn': return 'Cache Churn';
+    case 'tool_error_loop': return 'Tool Error Loop';
+    case 'repetitive_read': return 'Repetitive Read';
+    default: return cat || 'Waste Finding';
+  }
+}
+
 async function showSessionDetail(rawSessionId) {
   const sessionId = decodeURIComponent(rawSessionId);
   const modal = document.getElementById('session-modal');
@@ -323,10 +398,30 @@ async function showSessionDetail(rawSessionId) {
   summaryEl.innerHTML = '<div style="color: #8b949e">Loading session details...</div>';
   const turnsEl = document.getElementById('modal-turns-table');
   turnsEl.innerHTML = '';
+  const healthTagEl = document.getElementById('modal-session-health');
+  if (healthTagEl) healthTagEl.innerHTML = '';
+  const findingsEl = document.getElementById('modal-waste-findings');
+  if (findingsEl) findingsEl.innerHTML = '<div style="color: #8b949e">Analyzing context growth &amp; waste patterns...</div>';
+
+  if (charts.sessionTrajectory) {
+    charts.sessionTrajectory.destroy();
+    charts.sessionTrajectory = null;
+  }
 
   try {
-    const detail = await fetchJSON(`/api/sessions/detail?id=${encodeURIComponent(sessionId)}`);
+    const [detail, waste] = await Promise.all([
+      fetchJSON(`/api/sessions/detail?id=${encodeURIComponent(sessionId)}`),
+      fetchJSON(`/api/sessions/${encodeURIComponent(sessionId)}/waste`).catch(err => {
+        console.warn('Could not load session waste analysis:', err);
+        return null;
+      })
+    ]);
+
     const sm = detail.summary;
+    const healthScore = waste && waste.health_score !== undefined ? waste.health_score : 100;
+    const healthClass = healthScore >= 90 ? 'health-good' : (healthScore >= 70 ? 'health-warn' : 'health-bad');
+    const wastedUSD = waste ? (waste.wasted_usd || 0) : 0;
+    const wastePct = waste ? (waste.waste_percentage || 0) : 0;
 
     summaryEl.innerHTML = `
       <div class="summary-item">
@@ -357,17 +452,159 @@ async function showSessionDetail(rawSessionId) {
         <span>Tool Calls</span>
         <strong>${sm.tool_call_count || 0}${sm.tool_error_count > 0 ? ` (${sm.tool_error_count} err)` : ''}</strong>
       </div>
+      <div class="summary-item">
+        <span>Health Score</span>
+        <strong class="${healthClass}">${healthScore}/100</strong>
+      </div>
+      <div class="summary-item">
+        <span>Avoidable Waste</span>
+        <strong style="${wastedUSD > 0 ? 'color: #f85149' : ''}">$${wastedUSD.toFixed(4)}${wastePct > 0 ? ` (${wastePct.toFixed(1)}%)` : ''}</strong>
+      </div>
     `;
 
+    if (healthTagEl) {
+      healthTagEl.innerHTML = `<span class="health-badge ${healthClass}">Health: ${healthScore}/100</span>`;
+    }
+
+    // Render Trajectory Chart
+    const trajectoryCanvas = document.getElementById('sessionTrajectoryChart');
+    const trajData = (waste && waste.trajectory && waste.trajectory.length > 0)
+      ? waste.trajectory
+      : (detail.turns || []).map((t, idx) => ({
+          step_index: t.step_index > 0 ? t.step_index : (idx + 1),
+          input_tokens: t.input_tokens || 0,
+          output_tokens: t.output_tokens || 0,
+          cache_read_tokens: t.cache_read_tokens || 0,
+          cost_usd: t.cost_usd || 0,
+          has_tool_error: t.tool_error_count > 0,
+          is_waste: false
+        }));
+
+    if (trajectoryCanvas && trajData.length > 0) {
+      const labels = trajData.map(t => 'Turn ' + t.step_index);
+      const inputTokens = trajData.map(t => t.input_tokens);
+      const pointBgColors = trajData.map(t => t.is_waste ? '#f85149' : (t.has_tool_error ? '#d29922' : '#58a6ff'));
+      const pointBorderColors = trajData.map(t => t.is_waste ? '#ff7b72' : (t.has_tool_error ? '#e3b341' : '#79c0ff'));
+      const pointRadii = trajData.map(t => t.is_waste ? 6 : (t.has_tool_error ? 5 : 3.5));
+      const pointHoverRadii = trajData.map(t => t.is_waste ? 8 : (t.has_tool_error ? 7 : 5.5));
+
+      charts.sessionTrajectory = new Chart(trajectoryCanvas, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Input Tokens (Context Size)',
+            data: inputTokens,
+            borderColor: '#58a6ff',
+            backgroundColor: 'rgba(88, 166, 255, 0.08)',
+            fill: true,
+            tension: 0.2,
+            pointBackgroundColor: pointBgColors,
+            pointBorderColor: pointBorderColors,
+            pointRadius: pointRadii,
+            pointHoverRadius: pointHoverRadii,
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  const item = trajData[ctx.dataIndex];
+                  const lines = [
+                    `Input Tokens: ${formatTokens(item.input_tokens)}`,
+                    `Cache Read: ${formatTokens(item.cache_read_tokens)}`,
+                    `Cost: $${(item.cost_usd || 0).toFixed(4)}`
+                  ];
+                  if (item.has_tool_error) {
+                    lines.push('⚠️ Tool Error detected');
+                  }
+                  if (item.is_waste) {
+                    lines.push('🚨 Flagged as Token Waste');
+                  }
+                  return lines;
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Input Tokens'
+              },
+              ticks: {
+                callback: function(v) { return formatTokens(v); }
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Session Turn'
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Render Waste Findings
+    if (findingsEl) {
+      if (waste && waste.findings && waste.findings.length > 0) {
+        let findingsHtml = '<div class="findings-list">';
+        waste.findings.forEach(f => {
+          const sevClass = `sev-${f.severity || 'low'}`;
+          const catLabel = formatCategoryLabel(f.category);
+          findingsHtml += `
+            <div class="finding-card ${sevClass}">
+              <div class="finding-header">
+                <span class="finding-cat">${escapeHTML(catLabel)}</span>
+                <span class="badge badge-sev badge-sev-${f.severity || 'low'}">${escapeHTML((f.severity || 'low').toUpperCase())}</span>
+                <span class="finding-metrics">Turn #${f.turn_index} &bull; ${formatTokens(f.wasted_tokens)} tok &bull; $${(f.wasted_usd || 0).toFixed(4)}</span>
+              </div>
+              <div class="finding-body">
+                <p class="finding-expl">${escapeHTML(f.explanation)}</p>
+                ${f.recommendation ? `<p class="finding-rec">💡 <strong>Recommendation:</strong> ${escapeHTML(f.recommendation)}</p>` : ''}
+              </div>
+            </div>
+          `;
+        });
+        findingsHtml += '</div>';
+        findingsEl.innerHTML = findingsHtml;
+      } else {
+        findingsEl.innerHTML = `
+          <div class="finding-empty">
+            <span class="icon-check">✅</span> No token waste detected. Context growth and tool interactions are within healthy thresholds.
+          </div>
+        `;
+      }
+    }
+
+    // Render Turns Table
     turnsEl.innerHTML = '';
     if (!detail.turns || detail.turns.length === 0) {
-      turnsEl.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #8b949e">No turns recorded</td></tr>';
+      turnsEl.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #8b949e">No turns recorded</td></tr>';
       return;
+    }
+
+    const wasteTurnMap = {};
+    if (waste && waste.trajectory) {
+      waste.trajectory.forEach(tm => {
+        wasteTurnMap[tm.step_index] = tm.is_waste;
+      });
     }
 
     detail.turns.forEach((t, idx) => {
       const tr = document.createElement('tr');
       const stepNum = t.step_index > 0 ? t.step_index : (idx + 1);
+      const isWaste = !!wasteTurnMap[stepNum];
+      if (isWaste) {
+        tr.classList.add('tr-waste');
+      }
       const timeStr = new Date(t.timestamp).toLocaleTimeString();
       const cost = t.cost_usd !== null && t.cost_usd !== undefined ? '$' + t.cost_usd.toFixed(4) : '—';
       const latency = t.latency_ms ? (t.latency_ms / 1000).toFixed(2) + 's' : '—';
@@ -384,6 +621,13 @@ async function showSessionDetail(rawSessionId) {
         toolHtml = `${t.tool_call_count} call(s)`;
       }
 
+      let wasteBadge = '<span class="badge badge-turn-ok">OK</span>';
+      if (isWaste) {
+        wasteBadge = '<span class="badge badge-waste">Waste</span>';
+      } else if (t.tool_error_count > 0) {
+        wasteBadge = '<span class="badge badge-warn">Error</span>';
+      }
+
       tr.innerHTML = `
         <td>${stepNum}</td>
         <td>${timeStr}</td>
@@ -394,12 +638,21 @@ async function showSessionDetail(rawSessionId) {
         <td>${cost}</td>
         <td>${latency}</td>
         <td>${toolHtml}</td>
+        <td>${wasteBadge}</td>
       `;
       turnsEl.appendChild(tr);
     });
   } catch (err) {
     summaryEl.innerHTML = `<div style="color: #f85149">Failed to load details: ${escapeHTML(err.message)}</div>`;
   }
+}
+
+async function openSessionModal(sessionId) {
+  return showSessionDetail(sessionId);
+}
+
+async function fetchDashboardData(period) {
+  return loadDashboard(period);
 }
 
 function closeSessionModal() {

@@ -28,6 +28,24 @@ func TestDefaultConfig(t *testing.T) {
 	if !cfg.Daemon.WatchFSEvents {
 		t.Fatal("expected WatchFSEvents to be true by default")
 	}
+	if !cfg.WasteMonitoring.Enabled {
+		t.Fatal("expected WasteMonitoring.Enabled to be true by default")
+	}
+	if cfg.WasteMonitoring.SnowballTokenThreshold != 80000 {
+		t.Fatalf("expected SnowballTokenThreshold 80000, got %d", cfg.WasteMonitoring.SnowballTokenThreshold)
+	}
+	if cfg.WasteMonitoring.SevereTurnTokenThreshold != 120000 {
+		t.Fatalf("expected SevereTurnTokenThreshold 120000, got %d", cfg.WasteMonitoring.SevereTurnTokenThreshold)
+	}
+	if cfg.WasteMonitoring.WarnConsecutiveToolErrors != 3 {
+		t.Fatalf("expected WarnConsecutiveToolErrors 3, got %d", cfg.WasteMonitoring.WarnConsecutiveToolErrors)
+	}
+	if cfg.WasteMonitoring.CacheChurnDropThreshold != 0.40 {
+		t.Fatalf("expected CacheChurnDropThreshold 0.40, got %f", cfg.WasteMonitoring.CacheChurnDropThreshold)
+	}
+	if !cfg.WasteMonitoring.LogAlertsToConsole {
+		t.Fatal("expected LogAlertsToConsole to be true by default")
+	}
 }
 
 func TestLoadConfig_CustomFile(t *testing.T) {
@@ -131,5 +149,56 @@ tools:
 	}
 	if cfg.Tools["codex"].Enabled {
 		t.Fatal("expected codex disabled by disable_other_tools")
+	}
+}
+
+func TestConfig_WasteMonitoringDefaults(t *testing.T) {
+	cfg := config.DefaultConfig()
+	if !cfg.WasteMonitoring.Enabled {
+		t.Errorf("expected WasteMonitoring.Enabled default true, got false")
+	}
+	if cfg.WasteMonitoring.SnowballTokenThreshold <= 0 {
+		t.Errorf("expected positive SnowballTokenThreshold, got %d", cfg.WasteMonitoring.SnowballTokenThreshold)
+	}
+}
+
+func TestLoadConfig_WasteMonitoring(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+waste_monitoring:
+  enabled: false
+  snowball_token_threshold: 50000
+  severe_turn_token_threshold: 100000
+  warn_consecutive_tool_errors: 5
+  cache_churn_drop_threshold: 0.35
+  log_alerts_to_console: false
+`
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	if cfg.WasteMonitoring.Enabled {
+		t.Fatal("expected WasteMonitoring.Enabled to be false")
+	}
+	if cfg.WasteMonitoring.SnowballTokenThreshold != 50000 {
+		t.Fatalf("expected 50000, got %d", cfg.WasteMonitoring.SnowballTokenThreshold)
+	}
+	if cfg.WasteMonitoring.SevereTurnTokenThreshold != 100000 {
+		t.Fatalf("expected 100000, got %d", cfg.WasteMonitoring.SevereTurnTokenThreshold)
+	}
+	if cfg.WasteMonitoring.WarnConsecutiveToolErrors != 5 {
+		t.Fatalf("expected 5, got %d", cfg.WasteMonitoring.WarnConsecutiveToolErrors)
+	}
+	if cfg.WasteMonitoring.CacheChurnDropThreshold != 0.35 {
+		t.Fatalf("expected 0.35, got %f", cfg.WasteMonitoring.CacheChurnDropThreshold)
+	}
+	if cfg.WasteMonitoring.LogAlertsToConsole {
+		t.Fatal("expected LogAlertsToConsole to be false")
 	}
 }
