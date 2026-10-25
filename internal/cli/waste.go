@@ -88,8 +88,12 @@ func RenderWaste(w io.Writer, s *store.Store, period string, customCfg ...analyz
 	fmt.Fprintln(tw, "RANK\tTOOL\tSESSION ID\tCOST\tWASTE ($)\tWASTE (%)\tHEALTH\tPRIMARY ISSUE")
 	for i, sess := range summary.TopWasteSessions {
 		issue := primaryIssue(sess.Findings)
+		displayID := sess.SessionID
+		if len(displayID) > 24 {
+			displayID = displayID[:21] + "..."
+		}
 		fmt.Fprintf(tw, "%d\t%s\t%s\t$%.2f\t$%.2f\t%.1f%%\t%d/100\t%s\n",
-			i+1, sess.Tool, sess.SessionID, sess.TotalCost, sess.WastedUSD, sess.WastePercentage, sess.HealthScore, issue)
+			i+1, sess.Tool, displayID, sess.TotalCost, sess.WastedUSD, sess.WastePercentage, sess.HealthScore, issue)
 	}
 	tw.Flush()
 

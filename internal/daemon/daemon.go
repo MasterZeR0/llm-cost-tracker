@@ -19,6 +19,12 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+const (
+	maxAlertedEntries   = 2000
+	pruneAlertedEntries = 500
+	MaxAlertedEntries   = maxAlertedEntries
+)
+
 type Daemon struct {
 	cfg          *config.Config
 	store        *store.Store
@@ -60,6 +66,26 @@ func (d *Daemon) ResetAlertedTurns() {
 	d.alertMu.Lock()
 	defer d.alertMu.Unlock()
 	d.alertedTurns = make(map[string]int64)
+}
+
+// recordAlertedTurn records an alerted turn checkpoint while enforcing maxAlertedEntries
+// bounding with eviction to prevent memory leaks across long-running daemon lifecycles.
+// Must be called with d.alertMu held.
+func (d *Daemon) recordAlertedTurn(key string, turnNum int64) {
+	if d.alertedTurns == nil {
+		d.alertedTurns = make(map[string]int64)
+	}
+	if _, exists := d.alertedTurns[key]; !exists && len(d.alertedTurns) >= maxAlertedEntries {
+		pruned := 0
+		for k := range d.alertedTurns {
+			delete(d.alertedTurns, k)
+			pruned++
+			if pruned >= pruneAlertedEntries {
+				break
+			}
+		}
+	}
+	d.alertedTurns[key] = turnNum
 }
 
 func (d *Daemon) logAlert(msg string) {
@@ -128,7 +154,7 @@ func (d *Daemon) CheckTurnWasteThresholds(sessionID string, turns []store.Reques
 		if turn.InputTokens >= severeThreshold {
 			key := fmt.Sprintf("%s:severe", sessionID)
 			if lastAlerted, exists := d.alertedTurns[key]; !exists || turnNum > lastAlerted {
-				d.alertedTurns[key] = turnNum
+				d.recordAlertedTurn(key, turnNum)
 				reason := "severe turn token threshold exceeded"
 				msg := fmt.Sprintf("[DAEMON ALERT] Session '%s' (tool: %s) Turn %d: %s (threshold: %d). High snowball/waste risk.",
 					sessionID, tTool, turnNum, reason, severeThreshold)
@@ -137,7 +163,7 @@ func (d *Daemon) CheckTurnWasteThresholds(sessionID string, turns []store.Reques
 		} else if d.cfg.WasteMonitoring.SnowballTokenThreshold > 0 && turn.InputTokens >= snowballThreshold {
 			key := fmt.Sprintf("%s:snowball", sessionID)
 			if lastAlerted, exists := d.alertedTurns[key]; !exists || turnNum > lastAlerted {
-				d.alertedTurns[key] = turnNum
+				d.recordAlertedTurn(key, turnNum)
 				reason := "snowball token threshold exceeded"
 				msg := fmt.Sprintf("[DAEMON ALERT] Session '%s' (tool: %s) Turn %d: %s (threshold: %d). High snowball/waste risk.",
 					sessionID, tTool, turnNum, reason, snowballThreshold)
@@ -174,7 +200,7 @@ func (d *Daemon) CheckTurnWasteThresholds(sessionID string, turns []store.Reques
 
 		key := fmt.Sprintf("%s:tool_errors", sessionID)
 		if lastAlerted, exists := d.alertedTurns[key]; !exists || turnNum > lastAlerted {
-			d.alertedTurns[key] = turnNum
+			d.recordAlertedTurn(key, turnNum)
 			reason := "consecutive tool errors"
 			msg := fmt.Sprintf("[DAEMON ALERT] Session '%s' (tool: %s) Turn %d: %s (threshold: %d). High snowball/waste risk.",
 				sessionID, tTool, turnNum, reason, warnConsecutiveErrors)

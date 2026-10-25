@@ -381,6 +381,16 @@ func TestDashboardAPI_AnalyticsAndSessions(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing id, got %d", w.Code)
 	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("expected application/json Content-Type for 400, got %q", ct)
+	}
+	var err400 map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &err400); err != nil {
+		t.Fatalf("expected JSON body for 400, got: %v", err)
+	}
+	if err400["error"] != "missing session id" {
+		t.Fatalf("expected error 'missing session id', got %q", err400["error"])
+	}
 
 	// 7. Non-existent session returns 404 JSON (BUG-02)
 	req = httptest.NewRequest("GET", "/api/sessions/detail?id=does-not-exist", nil)
@@ -596,5 +606,15 @@ func TestDashboardAPI_SessionWaste(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing session id, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("expected application/json Content-Type for waste 400, got %q", ct)
+	}
+	var errWaste400 map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &errWaste400); err != nil {
+		t.Fatalf("expected JSON body for waste 400, got: %v", err)
+	}
+	if errWaste400["error"] != "missing session id" {
+		t.Fatalf("expected error 'missing session id', got %q", errWaste400["error"])
 	}
 }

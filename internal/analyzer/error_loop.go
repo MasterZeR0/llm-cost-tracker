@@ -58,8 +58,10 @@ func DetectErrorLoops(turns []store.Request, cfg Config) ([]WasteFinding, int64,
 			}
 			loopTokens += toks
 
-			if turn.CostUSD != nil && *turn.CostUSD > 0 {
-				loopUSD += *turn.CostUSD
+			if turn.CostUSD != nil {
+				if *turn.CostUSD > 0 {
+					loopUSD += *turn.CostUSD
+				}
 			} else if engine != nil && turn.Model != "" {
 				if cost, ok := engine.CalculateCost(turn.Model, turn.InputTokens, turn.OutputTokens, turn.CacheReadTokens, turn.CacheWriteTokens); ok && cost != nil {
 					loopUSD += *cost

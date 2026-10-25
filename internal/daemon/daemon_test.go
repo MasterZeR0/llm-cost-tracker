@@ -2,6 +2,7 @@ package daemon_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -463,5 +464,56 @@ func TestDaemon_WasteThresholdAlerts(t *testing.T) {
 	}
 	if !foundSyncAlert {
 		t.Errorf("expected RunIncrementalSync to trigger alert for sess-sync-alert, alerts: %v", syncAlerts)
+	}
+}
+
+func TestDaemon_AlertedTurnsBounding(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.WasteMonitoring.Enabled = true
+	cfg.WasteMonitoring.SevereTurnTokenThreshold = 100000
+
+	d := daemon.NewDaemon(cfg, nil, nil)
+
+	// Process 3500 distinct sessions with severe turn token threshold breaches
+	const testSessions = 3500
+	for i := 0; i < testSessions; i++ {
+		sessID := fmt.Sprintf("session-%d", i)
+		turns := []store.Request{
+			{
+				ID:          fmt.Sprintf("req-%d", i),
+				SessionID:   sessID,
+				Tool:        "claude_code",
+				StepIndex:   1,
+				InputTokens: 150000,
+			},
+		}
+		alerts := d.CheckTurnWasteThresholds(sessID, turns)
+		if len(alerts) != 1 {
+			t.Fatalf("expected 1 alert for session %s, got %d", sessID, len(alerts))
+		}
+	}
+
+	alerted := d.AlertedTurns()
+	if len(alerted) > daemon.MaxAlertedEntries {
+		t.Fatalf("expected alertedTurns size to be <= %d, got %d", daemon.MaxAlertedEntries, len(alerted))
+	}
+	if len(alerted) == 0 {
+		t.Fatal("expected alertedTurns to retain recent entries, got 0")
+	}
+
+	// Verify deduplication still works for the most recent session
+	lastSessID := fmt.Sprintf("session-%d", testSessions-1)
+	lastTurns := []store.Request{
+		{
+			ID:          "req-dup",
+			SessionID:   lastSessID,
+			Tool:        "claude_code",
+			StepIndex:   1,
+			InputTokens: 150000,
+		},
+	}
+	dupAlerts := d.CheckTurnWasteThresholds(lastSessID, lastTurns)
+	if len(dupAlerts) != 0 {
+		t.Fatalf("expected 0 duplicate alerts for recent session, got %d", len(dupAlerts))
 	}
 }

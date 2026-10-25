@@ -199,8 +199,14 @@ func computeTurnInputCost(turn store.Request, tokens int64, engine *pricing.Engi
 	if tokens <= 0 {
 		return 0.0
 	}
+	if turn.CostUSD != nil && *turn.CostUSD <= 0.0 {
+		return 0.0
+	}
 	if engine != nil && turn.Model != "" {
-		if cost, ok := engine.CalculateCost(turn.Model, tokens, 0, 0, 0); ok && cost != nil && *cost > 0 {
+		if cost, ok := engine.CalculateCost(turn.Model, tokens, 0, 0, 0); ok && cost != nil {
+			if *cost <= 0.0 {
+				return 0.0
+			}
 			if turn.CostUSD != nil && *turn.CostUSD > 0 && *cost > *turn.CostUSD {
 				return *turn.CostUSD
 			}

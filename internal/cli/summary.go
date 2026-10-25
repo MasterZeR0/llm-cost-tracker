@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/MasterZeR0/llm-cost-tracker/internal/store"
@@ -24,7 +23,7 @@ var summaryCmd = &cobra.Command{
 		}
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return RenderSummary(os.Stdout, st, periodFlag)
+		return RenderSummary(cmd.OutOrStdout(), st, periodFlag)
 	},
 }
 

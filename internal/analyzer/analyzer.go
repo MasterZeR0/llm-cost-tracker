@@ -170,10 +170,20 @@ func AnalyzeSession(detail store.SessionDetail, cfg Config) SessionWasteAnalysis
 	}
 
 	// Cap wasted values at session totals
-	if totalCost > 0 && totalWastedUSD > totalCost {
+	if totalCost <= 0 {
+		totalWastedUSD = 0.0
+		for i := range findings {
+			findings[i].WastedUSD = 0.0
+		}
+	} else if totalWastedUSD > totalCost {
 		totalWastedUSD = totalCost
 	}
-	if totalTokens > 0 && totalWastedTokens > totalTokens {
+	if totalTokens <= 0 {
+		totalWastedTokens = 0
+		for i := range findings {
+			findings[i].WastedTokens = 0
+		}
+	} else if totalWastedTokens > totalTokens {
 		totalWastedTokens = totalTokens
 	}
 

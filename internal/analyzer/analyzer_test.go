@@ -612,3 +612,221 @@ func TestAnalyzePeriod_Aggregation(t *testing.T) {
 		t.Fatalf("expected AvgHealthScore between 0 and 100, got %f", summary.AvgHealthScore)
 	}
 }
+
+func TestAnalyzeSession_UnpricedAndFreeModels(t *testing.T) {
+	cfg := analyzer.DefaultConfig()
+
+	t.Run("UnpricedModel_NilCost", func(t *testing.T) {
+		// Session with unmetered/unpriced model (CostUSD is nil)
+		// 6 turns with tool error loop and severe context growth
+		turns := make([]store.Request, 6)
+		for i := 0; i < 6; i++ {
+			toolErr := 0
+			st := "success"
+			if i >= 1 && i <= 3 {
+				toolErr = 1
+				st = "error"
+			}
+			input := int64(8000)
+			if i == 5 {
+				input = 130000 // severe token turn
+			}
+
+			turns[i] = store.Request{
+				SessionID:      "sess-unpriced-1",
+				Tool:           "ollama-cli",
+				Model:          "unpriced-local-model-xyz",
+				StepIndex:      int64(i + 1),
+				InputTokens:    input,
+				OutputTokens:   500,
+				TotalTokens:    input + 500,
+				CostUSD:        nil,
+				Status:         st,
+				ToolCallCount:  1,
+				ToolErrorCount: toolErr,
+			}
+		}
+
+		detail := store.SessionDetail{
+			Summary: store.SessionSummary{
+				SessionID:   "sess-unpriced-1",
+				Tool:        "ollama-cli",
+				TotalTokens: 180000,
+				TotalCost:   0.0,
+				TurnCount:   6,
+			},
+			Turns: turns,
+		}
+
+		analysis := analyzer.AnalyzeSession(detail, cfg)
+
+		// Verification: TotalCost == 0.0 and WastedUSD == 0.0 (never > TotalCost)
+		if analysis.TotalCost != 0.0 {
+			t.Fatalf("expected TotalCost 0.0, got %f", analysis.TotalCost)
+		}
+		if analysis.WastedUSD != 0.0 {
+			t.Fatalf("expected WastedUSD 0.0 for unpriced session, got %f (must never exceed TotalCost)", analysis.WastedUSD)
+		}
+		if analysis.WastedUSD > analysis.TotalCost {
+			t.Fatalf("WastedUSD (%f) must never exceed TotalCost (%f)", analysis.WastedUSD, analysis.TotalCost)
+		}
+
+		// Token waste should still be detected
+		if analysis.WastedTokens <= 0 {
+			t.Fatalf("expected positive WastedTokens, got %d", analysis.WastedTokens)
+		}
+		if len(analysis.Findings) == 0 {
+			t.Fatalf("expected findings to be identified for tool errors and large context")
+		}
+		for _, f := range analysis.Findings {
+			if f.WastedUSD != 0.0 {
+				t.Fatalf("expected finding WastedUSD 0.0, got %f for category %s", f.WastedUSD, f.Category)
+			}
+		}
+
+		// WastePercentage should be calculated from tokens when TotalCost == 0
+		if analysis.WastePercentage <= 0.0 {
+			t.Fatalf("expected positive WastePercentage based on token waste, got %f", analysis.WastePercentage)
+		}
+		if analysis.HealthScore >= 100 {
+			t.Fatalf("expected HealthScore < 100 due to errors and context bloat, got %d", analysis.HealthScore)
+		}
+	})
+
+	t.Run("FreeModel_ExplicitZeroCost", func(t *testing.T) {
+		// Session where turns have explicit CostUSD = 0.0
+		turns := make([]store.Request, 5)
+		for i := 0; i < 5; i++ {
+			toolErr := 0
+			st := "success"
+			if i >= 1 && i <= 3 {
+				toolErr = 1
+				st = "error"
+			}
+			turns[i] = store.Request{
+				SessionID:      "sess-free-zero",
+				Tool:           "gemini-free-cli",
+				Model:          "gemini-2.0-flash",
+				StepIndex:      int64(i + 1),
+				InputTokens:    5000,
+				OutputTokens:   200,
+				TotalTokens:    5200,
+				CostUSD:        ptrFloat64(0.0), // explicit 0.0 USD
+				Status:         st,
+				ToolCallCount:  1,
+				ToolErrorCount: toolErr,
+			}
+		}
+
+		detail := store.SessionDetail{
+			Summary: store.SessionSummary{
+				SessionID:   "sess-free-zero",
+				Tool:        "gemini-free-cli",
+				TotalTokens: 26000,
+				TotalCost:   0.0,
+				TurnCount:   5,
+			},
+			Turns: turns,
+		}
+
+		analysis := analyzer.AnalyzeSession(detail, cfg)
+
+		if analysis.TotalCost != 0.0 {
+			t.Fatalf("expected TotalCost 0.0, got %f", analysis.TotalCost)
+		}
+		if analysis.WastedUSD != 0.0 {
+			t.Fatalf("expected WastedUSD 0.0 for free session, got %f", analysis.WastedUSD)
+		}
+		if analysis.WastedUSD > analysis.TotalCost {
+			t.Fatalf("WastedUSD (%f) must never exceed TotalCost (%f)", analysis.WastedUSD, analysis.TotalCost)
+		}
+		for _, f := range analysis.Findings {
+			if f.WastedUSD != 0.0 {
+				t.Fatalf("expected finding WastedUSD 0.0, got %f for category %s", f.WastedUSD, f.Category)
+			}
+		}
+	})
+}
+
+func TestAnalyzeSession_ZeroDiscountModel_CacheChurn(t *testing.T) {
+	cfg := analyzer.DefaultConfig()
+
+	// 6 turns with cache churn on a model with zero prompt cache discount (InputPerMTok == CacheReadPerMTok)
+	turns := make([]store.Request, 6)
+	for i := 0; i < 5; i++ {
+		turns[i] = store.Request{
+			SessionID:       "sess-zero-discount-1",
+			Tool:            "claude-code",
+			Model:           "zero-discount-model",
+			StepIndex:       int64(i + 1),
+			InputTokens:     10000,
+			CacheReadTokens: 40000,
+			OutputTokens:    1000,
+			TotalTokens:     51000,
+			CostUSD:         ptrFloat64(0.153),
+			Status:          "success",
+		}
+	}
+
+	// Turn 6: Cache churn drops hit rate from 80% to 10%
+	turns[5] = store.Request{
+		SessionID:       "sess-zero-discount-1",
+		Tool:            "claude-code",
+		Model:           "zero-discount-model",
+		StepIndex:       6,
+		InputTokens:     45000,
+		CacheReadTokens: 5000,
+		OutputTokens:    1000,
+		TotalTokens:     51000,
+		CostUSD:         ptrFloat64(0.153),
+		Status:          "success",
+	}
+
+	// Verify direct DetectCacheChurn output
+	churnFindings, churnToks, churnCost := analyzer.DetectCacheChurn(turns, cfg)
+	if len(churnFindings) == 0 {
+		t.Fatal("expected at least 1 cache churn finding")
+	}
+	if churnToks <= 0 {
+		t.Fatalf("expected positive churned tokens, got %d", churnToks)
+	}
+	// Churn cost must be exactly 0.0 USD because cache read price equals input price (delta <= 0)
+	// It must NOT fall through to the $2.70/M fallback rate!
+	if churnCost != 0.0 {
+		t.Fatalf("expected 0.0 churn USD waste for zero-discount model, got %f (fell through to fallback rate!)", churnCost)
+	}
+	for _, f := range churnFindings {
+		if f.WastedUSD != 0.0 {
+			t.Fatalf("expected finding WastedUSD 0.0, got %f", f.WastedUSD)
+		}
+	}
+
+	// Also verify full AnalyzeSession integration
+	detail := store.SessionDetail{
+		Summary: store.SessionSummary{
+			SessionID:   "sess-zero-discount-1",
+			Tool:        "claude-code",
+			TotalTokens: 306000,
+			TotalCost:   0.918,
+			TurnCount:   6,
+		},
+		Turns: turns,
+	}
+
+	analysis := analyzer.AnalyzeSession(detail, cfg)
+	foundChurn := false
+	for _, f := range analysis.Findings {
+		if f.Category == analyzer.WasteCacheChurn {
+			foundChurn = true
+			if f.WastedUSD != 0.0 {
+				t.Fatalf("expected churn finding WastedUSD 0.0, got %f", f.WastedUSD)
+			}
+		}
+	}
+	if !foundChurn {
+		t.Fatal("expected WasteCacheChurn finding in AnalyzeSession output")
+	}
+	if analysis.WastedUSD != 0.0 {
+		t.Fatalf("expected 0.0 WastedUSD from zero-discount cache churn, got %f", analysis.WastedUSD)
+	}
+}

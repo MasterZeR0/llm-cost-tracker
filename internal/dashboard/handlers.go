@@ -138,7 +138,7 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 		id = r.PathValue("id")
 	}
 	if id == "" {
-		http.Error(w, "missing session id", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing session id"})
 		return
 	}
 	detail, err := s.store.GetSessionDetail(id)
@@ -190,7 +190,7 @@ func (s *Server) handleSessionWaste(w http.ResponseWriter, r *http.Request) {
 		id = r.PathValue("id")
 	}
 	if id == "" {
-		http.Error(w, "missing session id", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing session id"})
 		return
 	}
 

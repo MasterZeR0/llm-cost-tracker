@@ -69,12 +69,16 @@ func initConfig() {
 		cfg = config.DefaultConfig()
 	}
 
-	dbPath := filepath.Join(cfg.DataDir, "tracker.db")
-	st, err = store.NewStore(dbPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to open store at %s: %v\n", dbPath, err)
-		os.Exit(1)
+	if st == nil {
+		dbPath := filepath.Join(cfg.DataDir, "tracker.db")
+		st, err = store.NewStore(dbPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to open store at %s: %v\n", dbPath, err)
+			os.Exit(1)
+		}
 	}
 
-	engine = pricing.NewEngine(nil)
+	if engine == nil {
+		engine = pricing.NewEngine(nil)
+	}
 }

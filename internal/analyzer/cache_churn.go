@@ -96,17 +96,21 @@ func computeCacheChurnCost(turn store.Request, churnedTokens int64, engine *pric
 	if churnedTokens <= 0 {
 		return 0.0
 	}
+	if turn.CostUSD != nil && *turn.CostUSD <= 0.0 {
+		return 0.0
+	}
 	if engine != nil && turn.Model != "" {
 		missCost, ok1 := engine.CalculateCost(turn.Model, churnedTokens, 0, 0, 0)
 		hitCost, ok2 := engine.CalculateCost(turn.Model, 0, 0, churnedTokens, 0)
 		if ok1 && ok2 && missCost != nil && hitCost != nil {
 			delta := *missCost - *hitCost
-			if delta > 0 {
-				if turn.CostUSD != nil && *turn.CostUSD > 0 && delta > *turn.CostUSD {
-					return *turn.CostUSD
-				}
-				return delta
+			if delta <= 0 {
+				return 0.0
 			}
+			if turn.CostUSD != nil && *turn.CostUSD > 0 && delta > *turn.CostUSD {
+				return *turn.CostUSD
+			}
+			return delta
 		}
 	}
 	// Fallback using turn cost ratio if available

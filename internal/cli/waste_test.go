@@ -473,3 +473,111 @@ func TestWasteCmd_Execute(t *testing.T) {
 		t.Errorf("expected empty period message: %s", out)
 	}
 }
+
+func TestRenderWaste_TruncateLongSessionID(t *testing.T) {
+	tmpDir := t.TempDir()
+	st, err := store.NewStore(filepath.Join(tmpDir, "waste_long_id.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	now := time.Now().UTC()
+	longSessID := "session-with-extraordinary-long-identifier-12345" // 49 chars > 24
+
+	reqs := []store.Request{
+		{
+			ID:             "req-long-1",
+			SessionID:      longSessID,
+			Tool:           "claude_code",
+			Timestamp:      now.Add(-3 * time.Minute),
+			Model:          "claude-3-5-sonnet",
+			StepIndex:      1,
+			InputTokens:    50000,
+			OutputTokens:   1000,
+			TotalTokens:    51000,
+			CostUSD:        ptrFloat64(0.20),
+			Status:         "error",
+			ToolCallCount:  1,
+			ToolErrorCount: 1,
+			ToolCalls: []store.ToolCall{
+				{
+					ID:        "tc-l1",
+					RequestID: "req-long-1",
+					SessionID: longSessID,
+					ToolName:  "bash",
+					Status:    "error",
+					CreatedAt: now.Add(-3 * time.Minute),
+				},
+			},
+		},
+		{
+			ID:             "req-long-2",
+			SessionID:      longSessID,
+			Tool:           "claude_code",
+			Timestamp:      now.Add(-2 * time.Minute),
+			Model:          "claude-3-5-sonnet",
+			StepIndex:      2,
+			InputTokens:    50000,
+			OutputTokens:   1000,
+			TotalTokens:    51000,
+			CostUSD:        ptrFloat64(0.20),
+			Status:         "error",
+			ToolCallCount:  1,
+			ToolErrorCount: 1,
+			ToolCalls: []store.ToolCall{
+				{
+					ID:        "tc-l2",
+					RequestID: "req-long-2",
+					SessionID: longSessID,
+					ToolName:  "bash",
+					Status:    "error",
+					CreatedAt: now.Add(-2 * time.Minute),
+				},
+			},
+		},
+		{
+			ID:             "req-long-3",
+			SessionID:      longSessID,
+			Tool:           "claude_code",
+			Timestamp:      now.Add(-1 * time.Minute),
+			Model:          "claude-3-5-sonnet",
+			StepIndex:      3,
+			InputTokens:    50000,
+			OutputTokens:   1000,
+			TotalTokens:    51000,
+			CostUSD:        ptrFloat64(0.20),
+			Status:         "error",
+			ToolCallCount:  1,
+			ToolErrorCount: 1,
+			ToolCalls: []store.ToolCall{
+				{
+					ID:        "tc-l3",
+					RequestID: "req-long-3",
+					SessionID: longSessID,
+					ToolName:  "bash",
+					Status:    "error",
+					CreatedAt: now.Add(-1 * time.Minute),
+				},
+			},
+		},
+	}
+
+	if _, err := st.InsertRequests(reqs); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := cli.RenderWaste(&buf, st, "today"); err != nil {
+		t.Fatalf("unexpected error rendering waste: %v", err)
+	}
+
+	out := buf.String()
+	expectedTruncatedID := longSessID[:21] + "..."
+	if !strings.Contains(out, expectedTruncatedID) {
+		t.Errorf("expected truncated session ID %q in table output: %s", expectedTruncatedID, out)
+	}
+	if strings.Contains(out, longSessID) {
+		t.Errorf("did not expect full long session ID %q in table output: %s", longSessID, out)
+	}
+}

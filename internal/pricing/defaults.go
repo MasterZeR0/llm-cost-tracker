@@ -184,4 +184,11 @@ var DefaultModelPrices = map[string]ModelPrice{
 		OutputPerMTok:    2.19,
 		CacheReadPerMTok: 0.14,
 	},
+
+	// Zero cache discount models (input price == cache read price)
+	"zero-discount-model*": {
+		InputPerMTok:     3.00,
+		OutputPerMTok:    15.00,
+		CacheReadPerMTok: 3.00,
+	},
 }
