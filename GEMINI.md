@@ -21,7 +21,8 @@ llm-cost-tracker/
 ├── cmd/
 │   └── llm-track/            # Main entrypoint (main.go)
 ├── internal/
-│   ├── cli/                  # Cobra commands (root, sync, summary, sessions, tools, daemon, dashboard)
+│   ├── analyzer/             # Context bloat, token waste, and cache churn detection engine
+│   ├── cli/                  # Cobra commands (root, sync, summary, sessions, tools, waste, daemon, dashboard)
 │   ├── config/               # Config file loading, defaults, path expansion (~/.llm-track/)
 │   ├── daemon/               # Background fsnotify watcher, offset tracking, polling fallback
 │   ├── dashboard/            # Embedded HTTP server, API endpoints, static UI assets
@@ -52,6 +53,7 @@ go install ./cmd/llm-track
 ./bin/llm-track sync
 ./bin/llm-track summary --period=today
 ./bin/llm-track sessions
+./bin/llm-track waste --period=today
 ./bin/llm-track tools
 ./bin/llm-track dashboard --port=8080
 ./bin/llm-track daemon --foreground
